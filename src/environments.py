@@ -295,15 +295,15 @@ class NonMfosMetaGames:
         if self.game == "IPD":
             d, self.game_batched = ipd_batched(b, gamma_inner=self.gamma_inner)
             self.std = 1
-            self.lr = 1
+            self.lr = 0.1
         elif self.game == "IMP":
             d, self.game_batched = imp_batched(b, gamma_inner=self.gamma_inner)
             self.std = 1
-            self.lr = 1
+            self.lr = 0.1
         elif self.game == "chicken":
             d, self.game_batched = chicken_game_batch(b)
             self.std = 1
-            self.lr = 1
+            self.lr = 0.1
         else:
             raise NotImplementedError
 
