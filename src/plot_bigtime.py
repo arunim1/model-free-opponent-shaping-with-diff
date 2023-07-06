@@ -34,7 +34,7 @@ def main(filename):
 '''
 
 
-def plot_rew_vs_ep(p1, p2, values_1, values_2, filename, game, ep_values=[], nl_ep_values=[], rew_vnl_values=[], opp_vnl_rew_values=[]): # Fixed (for non-mfos). 100% correct.
+def plot_rew_vs_ep(p1, p2, values_1, values_2, filename, game, ep_values=[], nl_ep_values=[], rew_vnl_values=[], opp_vnl_rew_values=[]): # Fixed (for non-mfos).
     '''
     Plots the average reward per episode vs. training episode for two agents, and saves the plot to a file.
     For self-play with annealing, also plots the average reward per episode vs. training episode for the agents vs. a naive-learning agent.
@@ -46,6 +46,8 @@ def plot_rew_vs_ep(p1, p2, values_1, values_2, filename, game, ep_values=[], nl_
     else: self = False
     if filename.find("nolambda") != -1: nolambda = True
     else: nolambda = False
+
+    figname = f"{p1}vs{p2}_{game}_rew_vs_ep.png"
     
     if p1 == p2:
         p1 = f"{p1} 0"
@@ -75,12 +77,16 @@ def plot_rew_vs_ep(p1, p2, values_1, values_2, filename, game, ep_values=[], nl_
     if not os.path.isdir(f"images/{filename}"):
         os.mkdir(f"images/{filename}")
     # Show the plot
-    plt.savefig(f'images/{filename}/{p1}vs{p2}_{game}_rew_vs_ep-{id}.png')
+    plt.savefig(f'images/{filename}/{figname}')
     plt.clf()
 
-# FIXME Main confusions for the p_act(_v_ep) plots: not sure whether CD DC should be flipped. Leaning towards no.
 
-def plot_p_act(p1, p2, end_params, game, filename): # Fixed (for non-mfos). 95% correct. 
+def plot_p_act(p1, p2, end_params, game, filename): # Fixed (for non-mfos). 
+    '''
+    Plots the probability/threshold of each agent taking action at the end of training, and saves the plot to a file.
+    Only plots the first 50 of the batch.
+    '''
+    
     if game.find("diff") != -1: diff = True
     else: diff = False
 
@@ -103,6 +109,8 @@ def plot_p_act(p1, p2, end_params, game, filename): # Fixed (for non-mfos). 95% 
     else: print("Invalid game")
 
     scatter_points = {0: [], 1: [], 2: [], 3: [], 4: []}
+
+    figname = f"{p1}vs{p2}_{game}_p_act.png"
 
     if p1 == p2:
         p1 = f"{p1} 0"
@@ -150,11 +158,11 @@ def plot_p_act(p1, p2, end_params, game, filename): # Fixed (for non-mfos). 95% 
     if not os.path.isdir(f"images/{filename}"):
         os.mkdir(f"images/{filename}")
 
-    plt.savefig(f'images/{filename}/{p1}vs{p2}_{game}_p_act-{id}.png')
+    plt.savefig(f'images/{filename}/{figname}')
     plt.clf()
 
 
-def plot_p_act_vs_ep_med(p1, p2, all_params, game, filename): # Fixed (for non-mfos). 95% correct.
+def plot_p_act_vs_ep_med(p1, p2, all_params, game, filename): # Fixed (for non-mfos). 
     '''
     Plots the median probability of taking a certain action vs. training episode for two agents, and saves the plot to a file.
     25th and 75th percentile probabilities are also shaded in.
@@ -162,6 +170,7 @@ def plot_p_act_vs_ep_med(p1, p2, all_params, game, filename): # Fixed (for non-m
     states = ["s_0"]
     p2_nums = [0]
     if game.find("I") != -1:
+        all_arr = np.array(all_params).reshape(len(all_params), 3, 5)
         p2_nums.extend([1,3,2,4])
         if game.find("PD") != -1:
             states.extend(["CC","CD","DC","DD"])
@@ -171,17 +180,21 @@ def plot_p_act_vs_ep_med(p1, p2, all_params, game, filename): # Fixed (for non-m
             states.extend(["SwSw", "SwSt", "StSw", "StSt"])
         elif game.find("SH") != -1:
             states.extend(["SS", "SH", "HS", "HH"])
+    else:
+        all_arr = np.array(all_params).reshape(len(all_params), 3, 1)
     if game.find("PD") != -1: act = "Cooperate"
     elif game.find("MP") != -1: act = "Heads"
     elif game.find("HD") != -1: act = "Swerve"
     elif game.find("SH") != -1: act = "Stag"
     else: print("Invalid game")
+
+    prob_or_thresh = "Thresh" if (game.find("diff") != -1) else "Prob"
     
+    figname = f"{p1}vs{p2}_{game}_p_act_vs_ep_med.png"
+
     if p1 == p2:
         p1 = f"{p1} 0"
         p2 = f"{p2} 1"
-
-    all_arr = np.array(all_params).reshape(len(all_params), 3, 5)
     
     for i, state in enumerate(states):
         # agent_actions = all_arr[:,:,i]
@@ -203,29 +216,29 @@ def plot_p_act_vs_ep_med(p1, p2, all_params, game, filename): # Fixed (for non-m
         #plt.plot(all_arr_1_maybe[:, i], label=f'{state}')
 
     plt.xlabel('Training Episode')
-    plt.ylabel(f'Prob/Thresh ({act}) - {p1}')
+    plt.ylabel(f'{prob_or_thresh} ({act}) - {p1}')
     plt.legend()
-    plt.title(f'{p1} vs. {p2}: {game} Prob/Thresh of {act} vs. Training Episode - {p1}')
+    plt.title(f'{p1} vs. {p2}: {game} {prob_or_thresh} of {act} vs. Training Episode - {p1}')
     
     filename = filename.replace("/", "_")
-
-    id = random.randint(1000, 9999)
 
     if not os.path.isdir(f"images/{filename}"):
         os.mkdir(f"images/{filename}")
 
-    plt.savefig(f'images/{filename}/{p1}vs{p2}_{game}_p_act_vs_ep-{id}.png')
+    plt.savefig(f'images/{filename}/{figname}')
     plt.clf()
 
 
-def plot_p_act_vs_ep(p1, p2, all_params, game, filename): # Fixed (for non-mfos). 95% correct.
+def plot_p_act_vs_ep(p1, p2, all_params, game, filename): # Fixed (for non-mfos). 
     '''
-    Plots the probability of taking a certain action vs. training episode for two agents, over an example run. 
+    Plots the probability of taking a certain action vs. training episode for two agents, over an example run (first of the batch). 
     '''
     states = ["s_0"]
     p2_nums = [0]
     if game.find("I") != -1:
+        all_arr = np.array(all_params).reshape(len(all_params), 1, 5) 
         p2_nums.extend([1,3,2,4])
+
         if game.find("PD") != -1:
             states.extend(["CC","CD","DC","DD"])
         elif game.find("MP") != -1:
@@ -234,54 +247,47 @@ def plot_p_act_vs_ep(p1, p2, all_params, game, filename): # Fixed (for non-mfos)
             states.extend(["SwSw", "SwSt", "StSw", "StSt"])
         elif game.find("SH") != -1:
             states.extend(["SS", "SH", "HS", "HH"])
+    else:
+        all_arr = np.array(all_params).reshape(len(all_params), 1, 1) 
     if game.find("PD") != -1: act = "Cooperate"
     elif game.find("MP") != -1: act = "Heads"
     elif game.find("HD") != -1: act = "Swerve"
     elif game.find("SH") != -1: act = "Stag"
     else: print("Invalid game")
+
+    prob_or_thresh = "Thresh" if (game.find("diff") != -1) else "Prob"
+
+    figname = f"{p1}vs{p2}_{game}_p_act_vs_ep.png"
     
     if p1 == p2:
         p1 = f"{p1} 0"
         p2 = f"{p2} 1"
 
-    all_arr = np.array(all_params).reshape(len(all_params), 1, 5) # 3, 5
-    
     for i, state in enumerate(states):
         # agent_actions = all_arr[:,:,i]
         episodes = np.arange(all_arr.shape[0])
 
-        # Calculate the median action probability per episode
-        median_actions = all_arr[:, 0, i]
-        # lower_actions = all_arr[:, 1, i]
-        # upper_actions = all_arr[:, 2, i]
-        # Calculate the 25th and 75th percentiles
-        # lower_quartile = np.percentile(agent_actions, 25, axis=1)
-        # upper_quartile = np.percentile(agent_actions, 75, axis=1)
-
-        plt.plot(episodes, median_actions, label=f'{state}')
+        plt.plot(episodes, all_arr[:, 0, i], label=f'{state}')
         # plt.fill_between(episodes, lower_actions, upper_actions, alpha=0.2)
 
-    #for i, state in enumerate(states):
-        #plt.plot(all_params_1[:,i], label=f'{p1}, {state}')
-        #plt.plot(all_arr_1_maybe[:, i], label=f'{state}')
-
     plt.xlabel('Training Episode')
-    plt.ylabel(f'Prob/Thresh ({act}) - {p1}')
+    plt.ylabel(f'{prob_or_thresh} ({act}) - {p1}')
     plt.legend()
-    plt.title(f'{p1} vs. {p2}: {game} Prob/Thresh of {act} vs. Training Episode - {p1}')
+    plt.title(f'{p1} vs. {p2}: {game} {prob_or_thresh} of {act} vs. Training Episode - {p1}')
     
     filename = filename.replace("/", "_")
-
-    id = random.randint(1000, 9999)
 
     if not os.path.isdir(f"images/{filename}"):
         os.mkdir(f"images/{filename}")
 
-    plt.savefig(f'images/{filename}/{p1}vs{p2}_{game}_p_act_vs_ep-{id}.png')
+    plt.savefig(f'images/{filename}/{figname}')
     plt.clf()
 
 
-def plot_esv(p1, p2, all_Ms, game, filename): # Fixed (for non-mfos). 110% Correct. 
+def plot_esv(p1, p2, all_Ms, game, filename): # Fixed (for non-mfos). 
+    '''
+    Plots the expected state visitation vs. training episode over an example run (first of the batch). 
+    '''
     if game.find("PD") != -1:
         states = ["CC","CD","DC","DD"]
     elif game.find("MP") != -1:
@@ -296,6 +302,8 @@ def plot_esv(p1, p2, all_Ms, game, filename): # Fixed (for non-mfos). 110% Corre
     elif game.find("SH") != -1: act = "Stag"
     else: print("Invalid game")
     
+    figname = f"{p1}vs{p2}_{game}_esv.png"
+
     if p1 == p2:
         p1 = f"{p1} 0"
         p2 = f"{p2} 1"
@@ -317,12 +325,11 @@ def plot_esv(p1, p2, all_Ms, game, filename): # Fixed (for non-mfos). 110% Corre
     if not os.path.isdir(f"images/{filename}"):
         os.mkdir(f"images/{filename}")
 
-    plt.savefig(f'images/{filename}/{p1}vs{p2}_{game}_esv-{id}.png')
+    plt.savefig(f'images/{filename}/{figname}')
     plt.clf()
 
 
 def plot_non_mfos(data, filename):
-
     for entry in data:
         curr_game = entry["game"]
         curr_p1 = entry["p1"]
@@ -337,12 +344,18 @@ def plot_non_mfos(data, filename):
         plot_p_act(p1=curr_p1, p2=curr_p2, end_params=curr_end_params, game=curr_game, filename=filename) # need to fix the colors/legend. 
         plot_p_act_vs_ep(p1=curr_p1, p2=curr_p2, all_params=curr_all_params, game=curr_game, filename=filename)
         
-        if curr_game != "diffCHK" and curr_game != "chicken": # one-shot games do not have all_Ms/expected state visitation
+        if curr_game.find("I") != -1: # one-shot games do not have all_Ms/expected state visitation
             curr_Ms = entry["all_Ms"]
             plot_esv(p1=curr_p1, p2=curr_p2, all_Ms=curr_Ms, game=curr_game, filename=filename)
 
 
-def main(filename):
+def plot_self(data, filename):
+    for entry in data:
+        curr_game = entry["game"]
+
+
+
+def main(filename, caller=None):
     for ext in ["_8192", "_4096", "_2048", "_1024", "_512", "_256", "_128", "_64", "_32", "_16", "_8", ""]:
         if os.path.isfile(f"runs/{filename}/out{ext}.json"):
             filename = f"{filename}/out{ext}"
@@ -351,14 +364,25 @@ def main(filename):
     with open(f'runs/{filename}.json', 'r') as file:
         data = json.load(file)
 
+    if caller=="non_mfos":
+        plot_non_mfos(data, filename)
+        # end the program here
+        quit()
+    elif caller=="self":
+        plot_self(data, filename)
+        # end the program here
+        quit()
+
     if filename.find("non_mfos") != -1:
         plot_non_mfos(data, filename)
         # end the program here
         quit()
 
-    quit()
     if filename.find("self") != -1:
         plot_self(data, filename)
+
+    quit()
+
 
     if filename.find("diff_ipd") != -1:
         game = "diffIPD"
@@ -390,7 +414,7 @@ def main(filename):
 # args = parser.parse_args()
 
 if __name__ == "__main__":
-    filename = "non_mfos_all_iterated_4096_4k"
+    filename = "non_mfos_all_diffoneshot_test1"
     main(filename)
     quit()
 

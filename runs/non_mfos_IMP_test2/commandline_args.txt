@@ -1,3 +1,0 @@
-{
-  "exp_name": "non_mfos_IMP_test2"
-}

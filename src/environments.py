@@ -1,53 +1,90 @@
 import torch
 import os.path as osp
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu" if torch.backends.mps.is_available() else "cpu")
 
 
-def ipd_batched(bs, gamma_inner=0.96):
-    dims = [5, 5]
+def def_Ls(p_m_1, p_m_2, bs, gamma_inner=0.96, iterated=False, diff_game=False):
+    def Ls(th):
+        if iterated:
+            t_1_0 = torch.sigmoid(th[0][:, 0:1])
+            t_2_0 = torch.sigmoid(th[1][:, 0:1])
+            t_1 = torch.reshape(torch.sigmoid(th[0][:, 1:5]), (bs, 4, 1))
+            t_2 = torch.reshape(torch.sigmoid(torch.cat([th[1][:, 1:2], th[1][:, 3:4], th[1][:, 2:3], th[1][:, 4:5]], dim=-1)), (bs, 4, 1))
+            if diff_game: 
+                diff_0 = torch.abs(t_1_0 - t_2_0)
+                p_1_0 = torch.relu(t_1_0 - diff_0)
+                p_2_0 = torch.relu(t_2_0 - diff_0)
+                diff = torch.abs(t_1 - t_2)
+                p_1 = torch.relu(t_1 - diff)
+                p_2 = torch.relu(t_2 - diff)
+            else:
+                p_1_0, p_2_0, p_1, p_2 = t_1_0, t_2_0, t_1, t_2
+
+            p = torch.cat([p_1_0 * p_2_0, p_1_0 * (1 - p_2_0), (1 - p_1_0) * p_2_0, (1 - p_1_0) * (1 - p_2_0)], dim=-1)
+            P = torch.cat([p_1 * p_2, p_1 * (1 - p_2), (1 - p_1) * p_2, (1 - p_1) * (1 - p_2)], dim=-1)
+            M = torch.matmul(p.unsqueeze(1), torch.inverse(torch.eye(4).to(device) - gamma_inner * P))  
+            L_1 = -torch.matmul(M, torch.reshape(p_m_1, (bs, 4, 1)))
+            L_2 = -torch.matmul(M, torch.reshape(p_m_2, (bs, 4, 1)))
+            return [L_1.squeeze(-1), L_2.squeeze(-1), M]
+
+        else: 
+            if diff_game:
+                t_1, t_2 = torch.sigmoid(th[0]), torch.sigmoid(th[1])
+                diff = torch.abs(t_1 - t_2)
+                p_1 = torch.relu(t_1 - diff)
+                p_2 = torch.relu(t_2 - diff)
+            else:
+                p_1, p_2 = torch.sigmoid(th[0]), torch.sigmoid(th[1])
+            
+            x, y = torch.cat([p_1, 1 - p_1], dim=-1), torch.cat([p_2, 1 - p_2], dim=-1)
+            L_1 = -torch.matmul(torch.matmul(x.unsqueeze(1), p_m_1), y.unsqueeze(-1))
+            L_2 = -torch.matmul(torch.matmul(x.unsqueeze(1), p_m_2), y.unsqueeze(-1))
+            return [L_1.squeeze(-1), L_2.squeeze(-1), None]
+    
+    return Ls
+
+def pd_batched(bs, gamma_inner=0.96, iterated=False, diff_game=False):
+    dims = [5, 5] if iterated else [1, 1]
     payout_mat_1 = torch.Tensor([[-1, -3], [0, -2]]).to(device)
     payout_mat_2 = payout_mat_1.T
-    payout_mat_1 = payout_mat_1.reshape((1, 2, 2)).repeat(bs, 1, 1).to(device)
-    payout_mat_2 = payout_mat_2.reshape((1, 2, 2)).repeat(bs, 1, 1).to(device)
+    payout_mat_1 = payout_mat_1.reshape((1, 2, 2)).repeat(bs, 1, 1)
+    payout_mat_2 = payout_mat_2.reshape((1, 2, 2)).repeat(bs, 1, 1)
 
-    def Ls(th):  # th is a list of two different tensors. First one is first agent? tnesor size is List[Tensor(bs, 5), Tensor(bs,5)].
-        p_1_0 = torch.sigmoid(th[0][:, 0:1])
-        p_2_0 = torch.sigmoid(th[1][:, 0:1])
-        p = torch.cat([p_1_0 * p_2_0, p_1_0 * (1 - p_2_0), (1 - p_1_0) * p_2_0, (1 - p_1_0) * (1 - p_2_0)], dim=-1)
-        p_1 = torch.reshape(torch.sigmoid(th[0][:, 1:5]), (bs, 4, 1))
-        p_2 = torch.reshape(torch.sigmoid(torch.cat([th[1][:, 1:2], th[1][:, 3:4], th[1][:, 2:3], th[1][:, 4:5]], dim=-1)), (bs, 4, 1))
-        P = torch.cat([p_1 * p_2, p_1 * (1 - p_2), (1 - p_1) * p_2, (1 - p_1) * (1 - p_2)], dim=-1)
-
-        M = torch.matmul(p.unsqueeze(1), torch.inverse(torch.eye(4).to(device) - gamma_inner * P))
-        L_1 = -torch.matmul(M, torch.reshape(payout_mat_1, (bs, 4, 1)))
-        L_2 = -torch.matmul(M, torch.reshape(payout_mat_2, (bs, 4, 1)))
-
-        return [L_1.squeeze(-1), L_2.squeeze(-1), M]
+    Ls = def_Ls(p_m_1=payout_mat_1, p_m_2=payout_mat_2, bs=bs, gamma_inner=gamma_inner, iterated=iterated, diff_game=diff_game)
 
     return dims, Ls
 
-
-def imp_batched(bs, gamma_inner=0.96):
-    dims = [5, 5]
+def mp_batched(bs, gamma_inner=0.96, iterated=False, diff_game=False):
+    dims = [5, 5] if iterated else [1, 1]
     payout_mat_1 = torch.Tensor([[-1, 1], [1, -1]]).to(device)
     payout_mat_2 = -payout_mat_1
-    payout_mat_1 = payout_mat_1.reshape((1, 2, 2)).repeat(bs, 1, 1).to(device)
-    payout_mat_2 = payout_mat_2.reshape((1, 2, 2)).repeat(bs, 1, 1).to(device)
+    payout_mat_1 = payout_mat_1.reshape((1, 2, 2)).repeat(bs, 1, 1)
+    payout_mat_2 = payout_mat_2.reshape((1, 2, 2)).repeat(bs, 1, 1)
 
-    def Ls(th):  # th is a list of two different tensors. First one is first agent? tnesor size is List[Tensor(bs, 5), Tensor(bs,5)].
-        p_1_0 = torch.sigmoid(th[0][:, 0:1])
-        p_2_0 = torch.sigmoid(th[1][:, 0:1])
-        p = torch.cat([p_1_0 * p_2_0, p_1_0 * (1 - p_2_0), (1 - p_1_0) * p_2_0, (1 - p_1_0) * (1 - p_2_0)], dim=-1)
-        p_1 = torch.reshape(torch.sigmoid(th[0][:, 1:5]), (bs, 4, 1))
-        p_2 = torch.reshape(torch.sigmoid(torch.cat([th[1][:, 1:2], th[1][:, 3:4], th[1][:, 2:3], th[1][:, 4:5]], dim=-1)), (bs, 4, 1))
-        P = torch.cat([p_1 * p_2, p_1 * (1 - p_2), (1 - p_1) * p_2, (1 - p_1) * (1 - p_2)], dim=-1)
+    Ls = def_Ls(p_m_1=payout_mat_1, p_m_2=payout_mat_2, bs=bs, gamma_inner=gamma_inner, iterated=iterated, diff_game=diff_game)
 
-        M = torch.matmul(p.unsqueeze(1), torch.inverse(torch.eye(4).to(device) - gamma_inner * P))
-        L_1 = -torch.matmul(M, torch.reshape(payout_mat_1, (bs, 4, 1)))
-        L_2 = -torch.matmul(M, torch.reshape(payout_mat_2, (bs, 4, 1)))
+    return dims, Ls
 
-        return [L_1.squeeze(-1), L_2.squeeze(-1), M]
+def hd_batched(bs, gamma_inner=0.96, iterated=False, diff_game=False):
+    dims = [5, 5] if iterated else [1, 1]
+    payout_mat_1 = torch.Tensor([[0, -1], [1, -100]]).to(device)
+    payout_mat_2 = payout_mat_1.T
+    payout_mat_1 = payout_mat_1.reshape((1, 2, 2)).repeat(bs, 1, 1)
+    payout_mat_2 = payout_mat_2.reshape((1, 2, 2)).repeat(bs, 1, 1)
+
+    Ls = def_Ls(p_m_1=payout_mat_1, p_m_2=payout_mat_2, bs=bs, gamma_inner=gamma_inner, iterated=iterated, diff_game=diff_game)
+
+    return dims, Ls
+
+def sh_batched(bs, gamma_inner=0.96, iterated=False, diff_game=False):
+    dims = [5, 5] if iterated else [1, 1]
+    payout_mat_1 = torch.Tensor([[3, 0], [1, 1]]).to(device)
+    payout_mat_2 = payout_mat_1.T
+    payout_mat_1 = payout_mat_1.reshape((1, 2, 2)).repeat(bs, 1, 1)
+    payout_mat_2 = payout_mat_2.reshape((1, 2, 2)).repeat(bs, 1, 1)
+    
+    Ls = def_Ls(p_m_1=payout_mat_1, p_m_2=payout_mat_2, bs=bs, gamma_inner=gamma_inner, iterated=iterated, diff_game=diff_game)
 
     return dims, Ls
 
@@ -56,14 +93,13 @@ def get_gradient(function, param):
     grad = torch.autograd.grad(function, param, create_graph=True, allow_unused=True)[0]
     return grad
 
-
 def compute_best_response(outer_th_ba):
     batch_size = 1
     std = 0
     num_steps = 1000
     lr = 1
 
-    ipd_batched_env = ipd_batched(batch_size, gamma_inner=0.96)[1]
+    ipd_batched_env = pd_batched(batch_size, gamma_inner=0.96, iterated=True)[1]
     inner_th_ba = torch.nn.init.normal_(torch.empty((batch_size, 5), requires_grad=True), std=std).cuda()
     for i in range(num_steps):
         th_ba = [inner_th_ba, outer_th_ba.detach()]
@@ -73,41 +109,6 @@ def compute_best_response(outer_th_ba):
             inner_th_ba -= grad * lr
     print(l1.mean() * (1 - 0.96))
     return inner_th_ba
-
-
-def matching_pennies_batch(batch_size=128):
-    dims = [1, 1]
-    payout_mat_1 = torch.Tensor([[1, -1], [-1, 1]]).to(device)
-    payout_mat_2 = -payout_mat_1
-    payout_mat_1 = payout_mat_1.reshape((1, 2, 2)).repeat(batch_size, 1, 1)
-    payout_mat_2 = payout_mat_2.reshape((1, 2, 2)).repeat(batch_size, 1, 1)
-
-    def Ls(th):
-        p_1, p_2 = torch.sigmoid(th[0]), torch.sigmoid(th[1])
-        x, y = torch.cat([p_1, 1 - p_1], dim=-1), torch.cat([p_2, 1 - p_2], dim=-1)
-        L_1 = torch.matmul(torch.matmul(x.unsqueeze(1), payout_mat_1), y.unsqueeze(-1))
-        L_2 = torch.matmul(torch.matmul(x.unsqueeze(1), payout_mat_2), y.unsqueeze(-1))
-        return [L_1.squeeze(-1), L_2.squeeze(-1)]
-
-    return dims, Ls
-
-
-def chicken_game_batch(batch_size=128):
-    dims = [1, 1]
-    payout_mat_1 = torch.Tensor([[0, -1], [1, -100]]).to(device)
-    payout_mat_2 = torch.Tensor([[0, 1], [-1, -100]]).to(device)
-    payout_mat_1 = payout_mat_1.reshape((1, 2, 2)).repeat(batch_size, 1, 1)
-    payout_mat_2 = payout_mat_2.reshape((1, 2, 2)).repeat(batch_size, 1, 1)
-
-    def Ls(th):
-        p_1, p_2 = torch.sigmoid(th[0]), torch.sigmoid(th[1])
-        x, y = torch.cat([p_1, 1 - p_1], dim=-1), torch.cat([p_2, 1 - p_2], dim=-1)
-        L_1 = -torch.matmul(torch.matmul(x.unsqueeze(1), payout_mat_1), y.unsqueeze(-1))
-        L_2 = -torch.matmul(torch.matmul(x.unsqueeze(1), payout_mat_2), y.unsqueeze(-1))
-        return [L_1.squeeze(-1), L_2.squeeze(-1), None]
-
-    return dims, Ls
-
 
 def generate_mamaml(b, d, inner_env, game, inner_lr=1):
     """
@@ -158,20 +159,25 @@ class MetaGames:
         self.b = b
 
         self.game = game
-        if self.game == "IPD":
-            d, self.game_batched = ipd_batched(b, gamma_inner=self.gamma_inner)
-            self.std = 1
+
+        self.diff_game = True if game.find("diff") != -1 or game.find("Diff") != -1 else False
+        self.iterated = True if game.find("I") != -1 else False
+
+        if game.find("PD") != -1:
+            d, self.game_batched = pd_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
             self.lr = 1
-        elif self.game == "IMP":
-            d, self.game_batched = imp_batched(b, gamma_inner=self.gamma_inner)
-            self.std = 1
-            self.lr = 1
-        elif self.game == "chicken":
-            d, self.game_batched = chicken_game_batch(b)
-            self.std = 1
-            self.lr = 1
+        elif game.find("MP") != -1:
+            d, self.game_batched = mp_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
+            self.lr = 0.1
+        elif game.find("HD") != -1:
+            d, self.game_batched = hd_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
+            self.lr = 0.1
+        elif game.find("SH") != -1:
+            d, self.game_batched = sh_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
+            self.lr = 0.1
         else:
             raise NotImplementedError
+        
         self.d = d[0]
 
         self.opponent = opponent
@@ -240,15 +246,22 @@ class SymmetricMetaGames:
 
         self.b = b
         self.game = game
-        if self.game == "IPD":
-            d, self.game_batched = ipd_batched(b, gamma_inner=self.gamma_inner)
-            self.std = 1
-        elif self.game == "IMP":
-            d, self.game_batched = imp_batched(b, gamma_inner=self.gamma_inner)
-            self.std = 1
-        elif self.game == "chicken":
-            d, self.game_batched = chicken_game_batch(b)
-            self.std = 1
+
+        self.diff_game = True if game.find("diff") != -1 or game.find("Diff") != -1 else False
+        self.iterated = True if game.find("I") != -1 else False
+
+        if game.find("PD") != -1:
+            d, self.game_batched = pd_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
+            self.lr = 1
+        elif game.find("MP") != -1:
+            d, self.game_batched = mp_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
+            self.lr = 0.1
+        elif game.find("HD") != -1:
+            d, self.game_batched = hd_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
+            self.lr = 0.1
+        elif game.find("SH") != -1:
+            d, self.game_batched = sh_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
+            self.lr = 0.1
         else:
             raise NotImplementedError
 
@@ -292,21 +305,26 @@ class NonMfosMetaGames:
         self.p1 = p1
         self.p2 = p2
         self.game = game
-        if self.game == "IPD":
-            d, self.game_batched = ipd_batched(b, gamma_inner=self.gamma_inner)
-            self.std = 1
+
+        self.diff_game = True if game.find("diff") != -1 or game.find("Diff") != -1 else False
+        self.iterated = True if game.find("I") != -1 else False
+
+        if game.find("PD") != -1:
+            d, self.game_batched = pd_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
+            self.lr = 1
+        elif game.find("MP") != -1:
+            d, self.game_batched = mp_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
             self.lr = 0.1
-        elif self.game == "IMP":
-            d, self.game_batched = imp_batched(b, gamma_inner=self.gamma_inner)
-            self.std = 1
+        elif game.find("HD") != -1:
+            d, self.game_batched = hd_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
             self.lr = 0.1
-        elif self.game == "chicken":
-            d, self.game_batched = chicken_game_batch(b)
-            self.std = 1
+        elif game.find("SH") != -1:
+            d, self.game_batched = sh_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
             self.lr = 0.1
         else:
             raise NotImplementedError
 
+        self.std = 1
         if lr is not None:
             self.lr = lr
         self.d = d[0]
@@ -377,7 +395,7 @@ class NonMfosMetaGames:
         else:
             raise NotImplementedError
 
-        if self.game == "IPD" or self.game == "IMP":
+        if self.iterated:
             return torch.sigmoid(torch.cat([last_p1_th_ba, last_p2_th_ba])), -l2 * (1 - self.gamma_inner), -l1 * (1 - self.gamma_inner), M
         else:
             return torch.sigmoid(torch.cat([last_p1_th_ba, last_p2_th_ba])), -l2.detach(), -l1.detach(), M
