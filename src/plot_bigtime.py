@@ -34,7 +34,7 @@ def main(filename):
 '''
 
 
-def plot_rew_vs_ep(p1, p2, values_1, values_2, filename, game, ep_values=[], nl_ep_values=[], rew_vnl_values=[], opp_vnl_rew_values=[]): # Fixed (for non-mfos).
+def plot_rew_vs_ep(p1, p2, values_1, values_2, filename, game, ax=None, timestep=None, ep_values=[], nl_ep_values=[], rew_vnl_values=[], opp_vnl_rew_values=[]): # Fixed (for non-mfos).
     '''
     Plots the average reward per episode vs. training episode for two agents, and saves the plot to a file.
     For self-play with annealing, also plots the average reward per episode vs. training episode for the agents vs. a naive-learning agent.
@@ -52,36 +52,42 @@ def plot_rew_vs_ep(p1, p2, values_1, values_2, filename, game, ep_values=[], nl_
     if p1 == p2:
         p1 = f"{p1} 0"
         p2 = f"{p2} 1"
+    
+    later_ax = 1
+    if ax is None:
+        fig, ax = plt.subplots(1, 1, figsize=(8, 8))
+        later_ax = None
 
     if not self:
-        plt.plot(values_1, color='blue', label=f'{p1} Reward')
-        plt.plot(values_2, color='red', label=f'{p2} Reward')
+        ax.plot(values_1, color='blue', label=f'{p1} Reward')
+        ax.plot(values_2, color='red', label=f'{p2} Reward')
     else: # MFOS vs MFOS
-        plt.plot(ep_values, values_1, color='blue', label=f'{p1} Reward')
-        plt.plot(ep_values, values_2, color='red', label=f'{p2} Reward')
+        ax.plot(ep_values, values_1, color='blue', label=f'{p1} Reward')
+        ax.plot(ep_values, values_2, color='red', label=f'{p2} Reward')
         if not nolambda:
-            plt.plot(nl_ep_values, rew_vnl_values, color='tab:blue', label=f'{p1} vs NL Reward')
-            plt.plot(nl_ep_values, opp_vnl_rew_values, color='tab:red', label=f'{p2} vs NL Reward')
+            ax.plot(nl_ep_values, rew_vnl_values, color='tab:blue', label=f'{p1} vs NL Reward')
+            ax.plot(nl_ep_values, opp_vnl_rew_values, color='tab:red', label=f'{p2} vs NL Reward')
     
     # Add labels and legend
-    plt.xlabel('Training Episode')
-    plt.ylabel('Reward')
-    plt.legend()
+    ax.set_xlabel('Training Episode')
+    ax.set_ylabel('Reward')
+    ax.legend()
 
     filename = filename.replace("/", "_")
 
-    id = random.randint(1000, 9999)
-
-    plt.title(f'{p1} vs. {p2}: {game} Rewards vs. Training Episode')
-
+    ax.set_title(f'{p1} vs. {p2}: {game} Rewards vs. Training Episode')
+    if timestep is not None:
+        ax.set_title(f'Timestep: {timestep}')
     if not os.path.isdir(f"images/{filename}"):
         os.mkdir(f"images/{filename}")
     # Show the plot
-    plt.savefig(f'images/{filename}/{figname}')
-    plt.clf()
+    if later_ax is None:
+        fig.savefig(f'images/{filename}/{figname}')
+        plt.clf()
+        plt.close()
 
 
-def plot_p_act(p1, p2, end_params, game, filename): # Fixed (for non-mfos). 
+def plot_p_act(p1, p2, end_params, game, filename, ax=None, timestep=None): # Fixed (for non-mfos). 
     '''
     Plots the probability/threshold of each agent taking action at the end of training, and saves the plot to a file.
     Only plots the first 50 of the batch.
@@ -116,6 +122,11 @@ def plot_p_act(p1, p2, end_params, game, filename): # Fixed (for non-mfos).
         p1 = f"{p1} 0"
         p2 = f"{p2} 1"
 
+    later_ax = 1
+    if ax is None:
+        fig, ax = plt.subplots(1, 1, figsize = (8, 8))
+        later_ax = None
+
     for i in range(len(end_params[0])):
         agent1 = end_params[0][i]
         agent2 = end_params[1][i]
@@ -129,40 +140,40 @@ def plot_p_act(p1, p2, end_params, game, filename): # Fixed (for non-mfos).
 
     for j, color in zip(range(len(states)), colors):
         x, y = zip(*scatter_points[j])
-        plt.scatter(x, y, color=color, label=f'{states[j]}', alpha=0.3)
+        ax.scatter(x, y, color=color, label=f'{states[j]}', alpha=0.3)
 
     if diff:
-        plt.xlabel(f'{p1} Thresh({act})')
-        plt.ylabel(f'{p2} Thresh({act})')
+        ax.set_xlabel(f'{p1} Thresh({act})')
+        ax.set_ylabel(f'{p2} Thresh({act})')
 
     else:
-        plt.xlabel(f'{p1} Prob({act})')
-        plt.ylabel(f'{p2} Prob({act})')
+        ax.set_xlabel(f'{p1} Prob({act})')
+        ax.set_ylabel(f'{p2} Prob({act})')
 
-    plt.grid(True)
+    ax.grid(True)
 
     # Set square aspect ratio
-    plt.gca().set_aspect('equal')
+    ax.set_aspect('equal', 'box')
 
     # Set axis limits
-    plt.xlim(-0.05, 1.05)
-    plt.ylim(-0.05, 1.05)
+    ax.set_xlim(-0.05, 1.05)
+    ax.set_ylim(-0.05, 1.05)
     
-    plt.legend()
-    plt.title(f'{p1} vs. {p2}: {game} Final Action Parameters')
-    
+    ax.legend()
+    ax.set_title(f'{p1} vs. {p2}: {game} Final Action Parameters')
+    if timestep is not None:
+        ax.set_title(f'Timestep: {timestep}')
     filename = filename.replace("/", "_")
-
-    id = random.randint(1000, 9999)
 
     if not os.path.isdir(f"images/{filename}"):
         os.mkdir(f"images/{filename}")
+    if later_ax is None:
+        fig.savefig(f'images/{filename}/{figname}')
+        plt.clf()
+        plt.close()
 
-    plt.savefig(f'images/{filename}/{figname}')
-    plt.clf()
 
-
-def plot_p_act_vs_ep_med(p1, p2, all_params, game, filename): # Fixed (for non-mfos). 
+def plot_p_act_vs_ep_med(p1, p2, all_params, game, filename, ax=None, timestep=None): # Fixed (for non-mfos). 
     '''
     Plots the median probability of taking a certain action vs. training episode for two agents, and saves the plot to a file.
     25th and 75th percentile probabilities are also shaded in.
@@ -195,7 +206,11 @@ def plot_p_act_vs_ep_med(p1, p2, all_params, game, filename): # Fixed (for non-m
     if p1 == p2:
         p1 = f"{p1} 0"
         p2 = f"{p2} 1"
-    
+    later_ax = 1
+    if ax is None:
+        fig, ax = plt.subplots(1, 1, figsize = (8, 8))
+        later_ax = None
+
     for i, state in enumerate(states):
         # agent_actions = all_arr[:,:,i]
         episodes = np.arange(all_arr.shape[0])
@@ -208,28 +223,32 @@ def plot_p_act_vs_ep_med(p1, p2, all_params, game, filename): # Fixed (for non-m
         # lower_quartile = np.percentile(agent_actions, 25, axis=1)
         # upper_quartile = np.percentile(agent_actions, 75, axis=1)
 
-        plt.plot(episodes, median_actions, label=f'{state}')
-        plt.fill_between(episodes, lower_actions, upper_actions, alpha=0.2)
+        ax.plot(episodes, median_actions, label=f'{state}')
+        ax.fill_between(episodes, lower_actions, upper_actions, alpha=0.2)
 
     #for i, state in enumerate(states):
         #plt.plot(all_params_1[:,i], label=f'{p1}, {state}')
         #plt.plot(all_arr_1_maybe[:, i], label=f'{state}')
 
-    plt.xlabel('Training Episode')
-    plt.ylabel(f'{prob_or_thresh} ({act}) - {p1}')
-    plt.legend()
-    plt.title(f'{p1} vs. {p2}: {game} {prob_or_thresh} of {act} vs. Training Episode - {p1}')
-    
+    ax.set_xlabel('Training Episode')
+    ax.set_ylabel(f'{prob_or_thresh} ({act}) - {p1}')
+    ax.legend()
+
+    ax.set_title(f'{p1} vs. {p2}: {game} {prob_or_thresh} of {act} vs. Training Episode - {p1}')
+    if timestep is not None:
+        ax.set_title(f'Timestep: {timestep}')
+
     filename = filename.replace("/", "_")
 
     if not os.path.isdir(f"images/{filename}"):
         os.mkdir(f"images/{filename}")
+    if later_ax is None:
+        fig.savefig(f'images/{filename}/{figname}')
+        plt.clf()
+        plt.close()
 
-    plt.savefig(f'images/{filename}/{figname}')
-    plt.clf()
 
-
-def plot_p_act_vs_ep(p1, p2, all_params, game, filename): # Fixed (for non-mfos). 
+def plot_p_act_vs_ep(p1, p2, all_params, game, filename, ax=None, timestep=None): # Fixed (for non-mfos). 
     '''
     Plots the probability of taking a certain action vs. training episode for two agents, over an example run (first of the batch). 
     '''
@@ -262,29 +281,38 @@ def plot_p_act_vs_ep(p1, p2, all_params, game, filename): # Fixed (for non-mfos)
     if p1 == p2:
         p1 = f"{p1} 0"
         p2 = f"{p2} 1"
+    later_ax = 1
+    if ax is None:
+        fig, ax = plt.subplots(1, 1, figsize = (8, 8))
+        later_ax = None
 
     for i, state in enumerate(states):
         # agent_actions = all_arr[:,:,i]
         episodes = np.arange(all_arr.shape[0])
 
-        plt.plot(episodes, all_arr[:, 0, i], label=f'{state}')
+        ax.plot(episodes, all_arr[:, 0, i], label=f'{state}')
         # plt.fill_between(episodes, lower_actions, upper_actions, alpha=0.2)
 
-    plt.xlabel('Training Episode')
-    plt.ylabel(f'{prob_or_thresh} ({act}) - {p1}')
-    plt.legend()
-    plt.title(f'{p1} vs. {p2}: {game} {prob_or_thresh} of {act} vs. Training Episode - {p1}')
-    
+    ax.set_xlabel('Training Episode')
+    if timestep is None: ax.set_ylabel(f'{prob_or_thresh} ({act}) - {p1}') # proxy for MFOS/Meta game 
+    else: ax.set_ylabel(f'{prob_or_thresh} ({act}) - {p2}') 
+
+    ax.set_ylim(0, 1)
+    ax.legend()
+    ax.set_title(f'{p1} vs. {p2}: {game} {prob_or_thresh} of {act} vs. Training Episode - {p1}')
+    if timestep is not None:
+        ax.set_title(f'Timestep: {timestep}')
     filename = filename.replace("/", "_")
 
     if not os.path.isdir(f"images/{filename}"):
         os.mkdir(f"images/{filename}")
+    if later_ax is None:
+        fig.savefig(f'images/{filename}/{figname}')
+        plt.clf()
+        plt.close()
 
-    plt.savefig(f'images/{filename}/{figname}')
-    plt.clf()
 
-
-def plot_esv(p1, p2, all_Ms, game, filename): # Fixed (for non-mfos). 
+def plot_esv(p1, p2, all_Ms, game, filename, ax=None, timestep=None): # Fixed (for non-mfos). 
     '''
     Plots the expected state visitation vs. training episode over an example run (first of the batch). 
     '''
@@ -308,28 +336,37 @@ def plot_esv(p1, p2, all_Ms, game, filename): # Fixed (for non-mfos).
         p1 = f"{p1} 0"
         p2 = f"{p2} 1"
     
+    later_ax = 1
+    if ax is None:
+        fig, ax = plt.subplots(1, 1, figsize = (8, 8))
+        later_ax = None
     all_Ms = np.array(all_Ms).squeeze()
 
     for i, state in enumerate(states):
-        plt.plot(all_Ms[:,i], label=f'{state}')
+        ax.plot(all_Ms[:,i], label=f'{state}')
 
-    plt.xlabel('Training Episode')
-    plt.ylabel('Expected State Visitation')
-    plt.legend()
-    plt.title(f'{p1} vs. {p2}: {game} Expected State Visitation vs. Training Episode')
-    
+    ax.set_xlabel('Training Episode')
+    ax.set_ylabel('Expected State Visitation')
+
+    if game.find("I") != -1: ax.set_ylim(0, 25) # assumes gamma inner of 0.96
+    else: ax.set_ylim(0, 1) # assumes one-shot
+    ax.legend()
+
+    ax.set_title(f'{p1} vs. {p2}: {game} Expected State Visitation vs. Training Episode')
+    if timestep is not None:
+        ax.set_title(f'Timestep: {timestep}')
     filename = filename.replace("/", "_")
-
-    id = random.randint(1000, 9999)
 
     if not os.path.isdir(f"images/{filename}"):
         os.mkdir(f"images/{filename}")
 
-    plt.savefig(f'images/{filename}/{figname}')
-    plt.clf()
+    if later_ax is None:
+        fig.savefig(f'images/{filename}/{figname}')
+        plt.clf()
+        plt.close()
 
 
-def plot_non_mfos(data, filename):
+def plot_non_mfos(data, filename): # FIXED!
     for entry in data:
         curr_game = entry["game"]
         curr_p1 = entry["p1"]
@@ -341,7 +378,7 @@ def plot_non_mfos(data, filename):
 
         plt.clf()
         plot_rew_vs_ep(p1=curr_p1, p2=curr_p2, game=curr_game, values_1=curr_rew_1, values_2=curr_rew_2, filename=filename)
-        plot_p_act(p1=curr_p1, p2=curr_p2, end_params=curr_end_params, game=curr_game, filename=filename) # need to fix the colors/legend. 
+        plot_p_act(p1=curr_p1, p2=curr_p2, end_params=curr_end_params, game=curr_game, filename=filename)
         plot_p_act_vs_ep(p1=curr_p1, p2=curr_p2, all_params=curr_all_params, game=curr_game, filename=filename)
         
         if curr_game.find("I") != -1: # one-shot games do not have all_Ms/expected state visitation
@@ -349,33 +386,122 @@ def plot_non_mfos(data, filename):
             plot_esv(p1=curr_p1, p2=curr_p2, all_Ms=curr_Ms, game=curr_game, filename=filename)
 
 
-def plot_self(data, filename):
+def plot_self(data, quarts, filename, game):
+    p1 = "MFOS 0"
+    p2 = "MFOS 1"
+    prob_or_thresh = "Thresh" if game.find("diff") != -1 else "Prob"
+    act = "Cooperate" if game.find("PD") != -1 else "Heads" if game.find("MP") != -1 else "Swerve" if game.find("HD") != -1 else "Stag"
+    # plotting the reward, opp_rew vs. time
+    ep_values = []
+    nl_ep_values = []
+    rew1 = []
+    rew2 = []
+    rew_vnl_values = []
+    opp_vnl_rew_values = []
     for entry in data:
-        curr_game = entry["game"]
+        if(entry["other"]):
+            ep_values.append(entry["ep"])
+            rew2.append(entry["rew 0"])
+            rew1.append(entry["rew 1"])
+        else:
+            nl_ep_values.append(entry["ep"])
+            rew_vnl_values.append(entry["rew 0"])
+            opp_vnl_rew_values.append(entry["rew 1"])
+
+    plot_rew_vs_ep(p1, p2, rew1, rew2, filename, game, ep_values=ep_values, nl_ep_values=nl_ep_values, rew_vnl_values=rew_vnl_values, opp_vnl_rew_values=opp_vnl_rew_values)
+    filename = filename.replace("/", "_")
+
+    # plotting the rest    
+    fig1, ax1 = plt.subplots(1, 5, figsize=(40, 8))
+    fig2, ax2 = plt.subplots(1, 5, figsize=(40, 8))
+    fig3, ax3 = plt.subplots(1, 5, figsize=(40, 8))
+    fig4, ax4 = plt.subplots(1, 5, figsize=(40, 8))
+
+    for i, entry in enumerate(quarts):
+        curr_end_params = entry["end_params"]
+        curr_all_params = entry["all_params_1"]
+        curr_rew_1 = entry["rewards_1"]
+        curr_rew_2 = entry["rewards_2"]
+        timestep = entry["timestep"]
+        plot_p_act(p1, p2, curr_end_params, game, filename, ax1[i], timestep = timestep)
+        plot_p_act_vs_ep(p1, p2, curr_all_params, game, filename, ax2[i], timestep = timestep)
+        plot_rew_vs_ep(p1, p2, curr_rew_1, curr_rew_2, game, filename, ax3[i], timestep = timestep) 
+        plot_esv(p1, p2, entry["all_Ms"], game, filename, ax4[i], timestep = timestep)
+    
+    fig1.suptitle(f'{p1} vs. {p2}: {game} Final Params vs. Timestep')
+    fig2.suptitle(f'{p1} vs. {p2}: {game} {prob_or_thresh} of {act} vs. Timestep - {p2}')
+    fig3.suptitle(f'{p1} vs. {p2}: {game} Reward vs. Timestep')
+    fig1.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_p_act.png')
+    fig2.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_p_act_vs_ep.png')
+    fig3.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_rew_vs_ep.png')
+    fig4.suptitle(f'{p1} vs. {p2}: {game} Expected State Visitation vs. Timestep')
+    fig4.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_esv.png') 
+
+def plot_ppo(data, quarts, filename, p1, p2, game):
+    prob_or_thresh = "Thresh" if game.find("diff") != -1 else "Prob"
+    act = "Cooperate" if game.find("PD") != -1 else "Heads" if game.find("MP") != -1 else "Swerve" if game.find("HD") != -1 else "Stag"
+    # plotting the reward, opp_rew vs. time
+    rew1 = []
+    rew2 = []
+    for entry in data:
+        rew1.append(entry["rew"])
+        rew2.append(entry["opp_rew"])
+    plot_rew_vs_ep(p1, p2, rew1, rew2, filename, game)
+    filename = filename.replace("/", "_")
+
+    # plotting the rest    
+    fig1, ax1 = plt.subplots(1, 5, figsize=(40, 8))
+    fig2, ax2 = plt.subplots(1, 5, figsize=(40, 8))
+    fig3, ax3 = plt.subplots(1, 5, figsize=(40, 8))
+    fig4, ax4 = plt.subplots(1, 5, figsize=(40, 8))
+
+    for i, entry in enumerate(quarts):
+        curr_end_params = entry["end_params"]
+        curr_all_params = entry["all_params_1"]
+        curr_rew_1 = entry["rewards_1"]
+        curr_rew_2 = entry["rewards_2"]
+        timestep = entry["timestep"]
+        plot_p_act(p1, p2, curr_end_params, game, filename, ax1[i], timestep = timestep)
+        plot_p_act_vs_ep(p1, p2, curr_all_params, game, filename, ax2[i], timestep = timestep)
+        plot_rew_vs_ep(p1, p2, curr_rew_1, curr_rew_2, game, filename, ax3[i], timestep = timestep) 
+        if game.find("I") != -1: plot_esv(p1, p2, entry["all_Ms"], game, filename, ax4[i], timestep = timestep)
+    
+    fig1.suptitle(f'{p1} vs. {p2}: {game} Final Params vs. Timestep')
+    fig2.suptitle(f'{p1} vs. {p2}: {game} {prob_or_thresh} of {act} vs. Timestep - {p2}')
+    fig3.suptitle(f'{p1} vs. {p2}: {game} Reward vs. Timestep')
+    fig1.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_p_act.png')
+    fig2.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_p_act_vs_ep.png')
+    fig3.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_rew_vs_ep.png')
+    if game.find("I") != -1: 
+        fig4.suptitle(f'{p1} vs. {p2}: {game} Expected State Visitation vs. Timestep')
+        fig4.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_esv.png') 
 
 
-
-def main(filename, caller=None):
+def main(filename, caller=None, opponent=None, game=None):
     for ext in ["_8192", "_4096", "_2048", "_1024", "_512", "_256", "_128", "_64", "_32", "_16", "_8", ""]:
         if os.path.isfile(f"runs/{filename}/out{ext}.json"):
-            filename = f"{filename}/out{ext}"
+            filename_out = f"{filename}/out{ext}"
             break
 
-    with open(f'runs/{filename}.json', 'r') as file:
+    with open(f'runs/{filename_out}.json', 'r') as file:
         data = json.load(file)
 
     if caller=="non_mfos":
-        plot_non_mfos(data, filename)
-        # end the program here
+        plot_non_mfos(data, filename_out)
+        quit()
+    elif caller=="ppo":
+        with open(f'runs/{filename}/quartile_dumps.json', 'r') as file:
+            quarts = json.load(file)
+        plot_ppo(data, quarts, filename_out, p1 = "MFOS", p2 = opponent, game = game)
         quit()
     elif caller=="self":
-        plot_self(data, filename)
-        # end the program here
+        with open(f'runs/{filename}/quartile_dumps.json', 'r') as file:
+            quarts = json.load(file)
+        plot_self(data, quarts, filename_out, game=game)
         quit()
 
     if filename.find("non_mfos") != -1:
         plot_non_mfos(data, filename)
-        # end the program here
         quit()
 
     if filename.find("self") != -1:
@@ -383,39 +509,9 @@ def main(filename, caller=None):
 
     quit()
 
-
-    if filename.find("diff_ipd") != -1:
-        game = "diffIPD"
-    elif filename.find("diff_chk") != -1:
-        game = "diffCHK"
-    elif filename.find("diff_imp") != -1:
-        game = "diffIMP"
-    elif filename.find("chicken") != -1:
-        game = "chicken"
-    elif filename.find("imp") != -1:
-        game = "IMP"
-
-
-    if filename.find("self") != -1:
-        # this means that the filename contains "self"
-        self = True
-    if filename.find("nl") != -1:
-        # this means that the filename contains "self"
-        opponent = "NL "
-    if filename.find("nolambda") != -1:
-        nolambda = True
-    else:
-        nolambda = False
-    
-    # plot_nons(end_params, game, num_episodes=50, diff=False)
-
-# parser = argparse.ArgumentParser()
-# parser.add_argument('--filename', type=str, required=False)
-# args = parser.parse_args()
-
 if __name__ == "__main__":
-    filename = "non_mfos_all_diffoneshot_test1"
-    main(filename)
+    filename = "self_IPD_test2"
+    main(filename, caller="self", game="IPD")
     quit()
 
     if filename.find("self") != -1:

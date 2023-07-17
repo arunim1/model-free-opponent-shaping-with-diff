@@ -4,6 +4,14 @@ import os.path as osp
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu" if torch.backends.mps.is_available() else "cpu")
 
 
+def asymmetrize(p_m_1, p_m_2, eps=1e-3): 
+    # [(2,2), (0,3+e), (3,0), (1,1+e)], i.e. changing player 2's incentive to defect
+    p_m_1 = p_m_1.clone() # needed because of in-place operations + device apparently
+    p_m_2 = p_m_2.clone()
+    p_m_1 += torch.tensor([[0, eps], [0, eps]]).to(device)  # correct if p_m_1 corresponds to player 2's loss 
+    p_m_2 += torch.tensor([[0, 0], [0, 0]]).to(device)
+    return p_m_1, p_m_2
+
 def def_Ls(p_m_1, p_m_2, bs, gamma_inner=0.96, iterated=False, diff_game=False):
     def Ls(th):
         if iterated:
@@ -24,9 +32,9 @@ def def_Ls(p_m_1, p_m_2, bs, gamma_inner=0.96, iterated=False, diff_game=False):
             p = torch.cat([p_1_0 * p_2_0, p_1_0 * (1 - p_2_0), (1 - p_1_0) * p_2_0, (1 - p_1_0) * (1 - p_2_0)], dim=-1)
             P = torch.cat([p_1 * p_2, p_1 * (1 - p_2), (1 - p_1) * p_2, (1 - p_1) * (1 - p_2)], dim=-1)
             M = torch.matmul(p.unsqueeze(1), torch.inverse(torch.eye(4).to(device) - gamma_inner * P))  
-            L_1 = -torch.matmul(M, torch.reshape(p_m_1, (bs, 4, 1)))
-            L_2 = -torch.matmul(M, torch.reshape(p_m_2, (bs, 4, 1)))
-            return [L_1.squeeze(-1), L_2.squeeze(-1), M]
+            L_1 = -torch.matmul(M, torch.reshape(p_m_1, (bs, 4, 1))) # player 2's loss, since p2's params are th[0]
+            L_2 = -torch.matmul(M, torch.reshape(p_m_2, (bs, 4, 1))) # player 1's loss, since p1's params are th[1]
+            return [L_1.squeeze(-1), L_2.squeeze(-1), M] 
 
         else: 
             if diff_game:
@@ -38,16 +46,25 @@ def def_Ls(p_m_1, p_m_2, bs, gamma_inner=0.96, iterated=False, diff_game=False):
                 p_1, p_2 = torch.sigmoid(th[0]), torch.sigmoid(th[1])
             
             x, y = torch.cat([p_1, 1 - p_1], dim=-1), torch.cat([p_2, 1 - p_2], dim=-1)
-            L_1 = -torch.matmul(torch.matmul(x.unsqueeze(1), p_m_1), y.unsqueeze(-1))
-            L_2 = -torch.matmul(torch.matmul(x.unsqueeze(1), p_m_2), y.unsqueeze(-1))
-            return [L_1.squeeze(-1), L_2.squeeze(-1), None]
+            M = torch.bmm(x.view(bs, 2, 1), y.view(bs, 1, 2)).view(bs, 1, 4)
+            L_1 = -torch.matmul(M, torch.reshape(p_m_1, (bs, 4, 1))) # same as old version, but with M
+            L_2 = -torch.matmul(M, torch.reshape(p_m_2, (bs, 4, 1))) 
+            # L_1 = -torch.matmul(torch.matmul(x.unsqueeze(1), p_m_1), y.unsqueeze(-1))
+            # L_2 = -torch.matmul(torch.matmul(x.unsqueeze(1), p_m_2), y.unsqueeze(-1))
+            return [L_1.squeeze(-1), L_2.squeeze(-1), M]
     
     return Ls
 
-def pd_batched(bs, gamma_inner=0.96, iterated=False, diff_game=False):
+def pd_batched(bs, gamma_inner=0.96, iterated=False, diff_game=False, asym=None):
     dims = [5, 5] if iterated else [1, 1]
-    payout_mat_1 = torch.Tensor([[-1, -3], [0, -2]]).to(device)
+    G = 2.5
+    payout_mat_1 = torch.Tensor([[G, 0], [G + 1, 1]]).to(device)
+    payout_mat_1 -= 3
+    # payout_mat_1 = torch.Tensor([[-1, -3], [0, -2]]).to(device)
+
     payout_mat_2 = payout_mat_1.T
+    if asym is not None:
+        payout_mat_1, payout_mat_2 = asymmetrize(payout_mat_1, payout_mat_2, asym)
     payout_mat_1 = payout_mat_1.reshape((1, 2, 2)).repeat(bs, 1, 1)
     payout_mat_2 = payout_mat_2.reshape((1, 2, 2)).repeat(bs, 1, 1)
 
@@ -55,10 +72,12 @@ def pd_batched(bs, gamma_inner=0.96, iterated=False, diff_game=False):
 
     return dims, Ls
 
-def mp_batched(bs, gamma_inner=0.96, iterated=False, diff_game=False):
+def mp_batched(bs, gamma_inner=0.96, iterated=False, diff_game=False, asym=None):
     dims = [5, 5] if iterated else [1, 1]
     payout_mat_1 = torch.Tensor([[-1, 1], [1, -1]]).to(device)
     payout_mat_2 = -payout_mat_1
+    if asym is not None: # unsure about MP asymmetry
+        payout_mat_1, payout_mat_2 = asymmetrize(payout_mat_1, payout_mat_2, asym)
     payout_mat_1 = payout_mat_1.reshape((1, 2, 2)).repeat(bs, 1, 1)
     payout_mat_2 = payout_mat_2.reshape((1, 2, 2)).repeat(bs, 1, 1)
 
@@ -66,10 +85,12 @@ def mp_batched(bs, gamma_inner=0.96, iterated=False, diff_game=False):
 
     return dims, Ls
 
-def hd_batched(bs, gamma_inner=0.96, iterated=False, diff_game=False):
+def hd_batched(bs, gamma_inner=0.96, iterated=False, diff_game=False, asym=None):
     dims = [5, 5] if iterated else [1, 1]
     payout_mat_1 = torch.Tensor([[0, -1], [1, -100]]).to(device)
     payout_mat_2 = payout_mat_1.T
+    if asym is not None:
+        payout_mat_1, payout_mat_2 = asymmetrize(payout_mat_1, payout_mat_2, asym)
     payout_mat_1 = payout_mat_1.reshape((1, 2, 2)).repeat(bs, 1, 1)
     payout_mat_2 = payout_mat_2.reshape((1, 2, 2)).repeat(bs, 1, 1)
 
@@ -77,10 +98,12 @@ def hd_batched(bs, gamma_inner=0.96, iterated=False, diff_game=False):
 
     return dims, Ls
 
-def sh_batched(bs, gamma_inner=0.96, iterated=False, diff_game=False):
+def sh_batched(bs, gamma_inner=0.96, iterated=False, diff_game=False, asym=None):
     dims = [5, 5] if iterated else [1, 1]
     payout_mat_1 = torch.Tensor([[3, 0], [1, 1]]).to(device)
     payout_mat_2 = payout_mat_1.T
+    if asym is not None:
+        payout_mat_1, payout_mat_2 = asymmetrize(payout_mat_1, payout_mat_2, asym)
     payout_mat_1 = payout_mat_1.reshape((1, 2, 2)).repeat(bs, 1, 1)
     payout_mat_2 = payout_mat_2.reshape((1, 2, 2)).repeat(bs, 1, 1)
     
@@ -100,7 +123,7 @@ def compute_best_response(outer_th_ba):
     lr = 1
 
     ipd_batched_env = pd_batched(batch_size, gamma_inner=0.96, iterated=True)[1]
-    inner_th_ba = torch.nn.init.normal_(torch.empty((batch_size, 5), requires_grad=True), std=std).cuda()
+    inner_th_ba = torch.nn.init.normal_(torch.empty((batch_size, 5), requires_grad=True), std=std).to(device)
     for i in range(num_steps):
         th_ba = [inner_th_ba, outer_th_ba.detach()]
         l1, l2, M = ipd_batched_env(th_ba)
@@ -125,7 +148,7 @@ def generate_mamaml(b, d, inner_env, game, inner_lr=1):
 
     for ep in range(1000):
         agent = mamaml.clone().repeat(b, 1)
-        opp = torch.nn.init.normal_(torch.empty((b, d), requires_grad=True), std=1.0).cuda()
+        opp = torch.nn.init.normal_(torch.empty((b, d), requires_grad=True), std=1.0).to(device)
         total_agent_loss = 0
         total_opp_loss = 0
         for step in range(100):
@@ -178,6 +201,7 @@ class MetaGames:
         else:
             raise NotImplementedError
         
+        self.std = 1
         self.d = d[0]
 
         self.opponent = opponent
@@ -234,7 +258,7 @@ class MetaGames:
         else:
             raise NotImplementedError
 
-        if self.game == "IPD" or self.game == "IMP":
+        if self.iterated:
             return torch.sigmoid(torch.cat((outer_th_ba, last_inner_th_ba), dim=-1)).detach(), (-l2 * (1 - self.gamma_inner)).detach(), (-l1 * (1 - self.gamma_inner)).detach(), M
         else:
             return torch.sigmoid(torch.cat((outer_th_ba, last_inner_th_ba), dim=-1)).detach(), -l2.detach(), -l1.detach(), M
@@ -264,7 +288,8 @@ class SymmetricMetaGames:
             self.lr = 0.1
         else:
             raise NotImplementedError
-
+        
+        self.std = 1
         self.d = d[0]
 
     def reset(self, info=False):
@@ -285,7 +310,7 @@ class SymmetricMetaGames:
         state_0 = torch.sigmoid(torch.cat((p_ba_0.detach(), p_ba_1.detach()), dim=-1))
         state_1 = torch.sigmoid(torch.cat((p_ba_1.detach(), p_ba_0.detach()), dim=-1))
 
-        if self.game == "IPD" or self.game == "IMP":
+        if self.iterated:
             return [state_0, state_1], [-l1 * (1 - self.gamma_inner), -l2 * (1 - self.gamma_inner)], M
         else:
             return [state_0, state_1], [-l1.detach(), -l2.detach()], M
@@ -317,10 +342,11 @@ class NonMfosMetaGames:
             self.lr = 0.1
         elif game.find("HD") != -1:
             d, self.game_batched = hd_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
-            self.lr = 0.1
+            self.lr = 0.1 if self.diff_game else 0.01 
         elif game.find("SH") != -1:
             d, self.game_batched = sh_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
-            self.lr = 0.1
+            self.lr = 3.612
+            self.lr *= 0.01 if self.diff_game and self.iterated else 0.1 if self.diff_game else 1
         else:
             raise NotImplementedError
 
