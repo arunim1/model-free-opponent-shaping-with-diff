@@ -2,39 +2,12 @@ import json
 import matplotlib.pyplot as plt
 import seaborn as sns
 import torch
-import random
 import os
 import numpy as np
-
-## Pseudo code to fill in later: 
-'''
-def main(filename):
-    this parses the filename to determine which data to load
-        if the filename contains "non_mfos", then it is a round robin set, and each entry in data is a separate game
-        this means each entry calls the plot functions. 
-        if the filename contains "self" and doesnt contain "nolambda" then I need to additionally load ep values, vnl values
-        to plot the mfos vs mfos and mfos vs nl properly
-        if the filename contains "nolambda" then I can pretty much plot as normal. just need to get the data correctly.
-
-    then loads the corresponding data. 
-    
-    regardless of the filename, I need/want: p1, p2, game, and then end_params, all_params, all_Ms, rewards_1, rewards_2, or equivalent.
-
-    this data is then fed into a subset of a few plotting functions
-    each of which plots a different graph I want, and saves it to a file
-        one of p(act) at the end -- see lola 
-            plot_p_act
-        one of p(act) over the course of the training run -- only of p2
-
-        one of E(reward) over the course of the training run
-            plot_rew_vs_ep
-        one of E(state visitation) -- only four states. 
-            plot_esv
-
-'''
+import argparse
 
 
-def plot_rew_vs_ep(p1, p2, values_1, values_2, filename, game, ax=None, timestep=None, ep_values=[], nl_ep_values=[], rew_vnl_values=[], opp_vnl_rew_values=[]): # Fixed (for non-mfos).
+def plot_rew_vs_ep(p1, p2, values_1, values_2, filename, game, ax=None, timestep=None, ep_values=[], nl_ep_values=[], rew_vnl_values=[], opp_vnl_rew_values=[]): 
     '''
     Plots the average reward per episode vs. training episode for two agents, and saves the plot to a file.
     For self-play with annealing, also plots the average reward per episode vs. training episode for the agents vs. a naive-learning agent.
@@ -87,7 +60,7 @@ def plot_rew_vs_ep(p1, p2, values_1, values_2, filename, game, ax=None, timestep
         plt.close()
 
 
-def plot_p_act(p1, p2, end_params, game, filename, ax=None, timestep=None): # Fixed (for non-mfos). 
+def plot_p_act(p1, p2, end_params, game, filename, ax=None, timestep=None):  
     '''
     Plots the probability/threshold of each agent taking action at the end of training, and saves the plot to a file.
     Only plots the first 50 of the batch.
@@ -136,7 +109,6 @@ def plot_p_act(p1, p2, end_params, game, filename, ax=None, timestep=None): # Fi
             scatter_points[j].append((probs_1, probs_2))
 
     colors = sns.color_palette()
-    #colors[0], colors[-1] = colors[-1], colors[0] # making it match LOLA
 
     for j, color in zip(range(len(states)), colors):
         x, y = zip(*scatter_points[j])
@@ -173,7 +145,7 @@ def plot_p_act(p1, p2, end_params, game, filename, ax=None, timestep=None): # Fi
         plt.close()
 
 
-def plot_p_act_vs_ep_med(p1, p2, all_params, game, filename, ax=None, timestep=None): # Fixed (for non-mfos). 
+def plot_p_act_vs_ep_med(p1, p2, all_params, game, filename, ax=None, timestep=None):  
     '''
     Plots the median probability of taking a certain action vs. training episode for two agents, and saves the plot to a file.
     25th and 75th percentile probabilities are also shaded in.
@@ -226,10 +198,6 @@ def plot_p_act_vs_ep_med(p1, p2, all_params, game, filename, ax=None, timestep=N
         ax.plot(episodes, median_actions, label=f'{state}')
         ax.fill_between(episodes, lower_actions, upper_actions, alpha=0.2)
 
-    #for i, state in enumerate(states):
-        #plt.plot(all_params_1[:,i], label=f'{p1}, {state}')
-        #plt.plot(all_arr_1_maybe[:, i], label=f'{state}')
-
     ax.set_xlabel('Training Episode')
     ax.set_ylabel(f'{prob_or_thresh} ({act}) - {p1}')
     ax.legend()
@@ -248,7 +216,7 @@ def plot_p_act_vs_ep_med(p1, p2, all_params, game, filename, ax=None, timestep=N
         plt.close()
 
 
-def plot_p_act_vs_ep(p1, p2, all_params, game, filename, ax=None, timestep=None): # Fixed (for non-mfos). 
+def plot_p_act_vs_ep(p1, p2, all_params, game, filename, ax=None, timestep=None):  
     '''
     Plots the probability of taking a certain action vs. training episode for two agents, over an example run (first of the batch). 
     '''
@@ -312,7 +280,7 @@ def plot_p_act_vs_ep(p1, p2, all_params, game, filename, ax=None, timestep=None)
         plt.close()
 
 
-def plot_esv(p1, p2, all_Ms, game, filename, ax=None, timestep=None): # Fixed (for non-mfos). 
+def plot_esv(p1, p2, all_Ms, game, filename, ax=None, timestep=None):  
     '''
     Plots the expected state visitation vs. training episode over an example run (first of the batch). 
     '''
@@ -342,14 +310,21 @@ def plot_esv(p1, p2, all_Ms, game, filename, ax=None, timestep=None): # Fixed (f
         later_ax = None
     all_Ms = np.array(all_Ms).squeeze()
 
+    # Calculate sum across each row
+    row_sums = all_Ms.sum(axis=1)
+
     for i, state in enumerate(states):
         ax.plot(all_Ms[:,i], label=f'{state}')
 
     ax.set_xlabel('Training Episode')
     ax.set_ylabel('Expected State Visitation')
 
-    if game.find("I") != -1: ax.set_ylim(0, 25) # assumes gamma inner of 0.96
-    else: ax.set_ylim(0, 1) # assumes one-shot
+    # Get maximum row sum
+    max_row_sum = np.max(row_sums)
+
+    # Set y-axis limits, add small offset to ensure visibility of plotted lines
+    offset = max_row_sum * 0.05  # 5% offset
+    ax.set_ylim(-offset, max_row_sum + offset)
     ax.legend()
 
     ax.set_title(f'{p1} vs. {p2}: {game} Expected State Visitation vs. Training Episode')
@@ -371,19 +346,17 @@ def plot_non_mfos(data, filename): # FIXED!
         curr_game = entry["game"]
         curr_p1 = entry["p1"]
         curr_p2 = entry["p2"]
-        curr_end_params = entry["end_params"]
-        curr_all_params = entry["all_params_1"]
+        # curr_end_params = entry["end_params"]
+        # curr_all_params = entry["all_params_1"]
         curr_rew_1 = entry["rewards_1"]
         curr_rew_2 = entry["rewards_2"]
 
         plt.clf()
         plot_rew_vs_ep(p1=curr_p1, p2=curr_p2, game=curr_game, values_1=curr_rew_1, values_2=curr_rew_2, filename=filename)
-        plot_p_act(p1=curr_p1, p2=curr_p2, end_params=curr_end_params, game=curr_game, filename=filename)
-        plot_p_act_vs_ep(p1=curr_p1, p2=curr_p2, all_params=curr_all_params, game=curr_game, filename=filename)
-        
-        if curr_game.find("I") != -1: # one-shot games do not have all_Ms/expected state visitation
-            curr_Ms = entry["all_Ms"]
-            plot_esv(p1=curr_p1, p2=curr_p2, all_Ms=curr_Ms, game=curr_game, filename=filename)
+        # plot_p_act(p1=curr_p1, p2=curr_p2, end_params=curr_end_params, game=curr_game, filename=filename)
+        # plot_p_act_vs_ep(p1=curr_p1, p2=curr_p2, all_params=curr_all_params, game=curr_game, filename=filename)
+        curr_Ms = entry["all_Ms"]
+        plot_esv(p1=curr_p1, p2=curr_p2, all_Ms=curr_Ms, game=curr_game, filename=filename)
 
 
 def plot_self(data, quarts, filename, game):
@@ -416,23 +389,24 @@ def plot_self(data, quarts, filename, game):
     fig2, ax2 = plt.subplots(1, 5, figsize=(40, 8))
     fig3, ax3 = plt.subplots(1, 5, figsize=(40, 8))
     fig4, ax4 = plt.subplots(1, 5, figsize=(40, 8))
+    plt.tight_layout(pad=2)
 
     for i, entry in enumerate(quarts):
-        curr_end_params = entry["end_params"]
-        curr_all_params = entry["all_params_1"]
+        # curr_end_params = entry["end_params"]
+        # curr_all_params = entry["all_params_1"]
         curr_rew_1 = entry["rewards_1"]
         curr_rew_2 = entry["rewards_2"]
         timestep = entry["timestep"]
-        plot_p_act(p1, p2, curr_end_params, game, filename, ax1[i], timestep = timestep)
-        plot_p_act_vs_ep(p1, p2, curr_all_params, game, filename, ax2[i], timestep = timestep)
+        # plot_p_act(p1, p2, curr_end_params, game, filename, ax1[i], timestep = timestep)
+        # plot_p_act_vs_ep(p1, p2, curr_all_params, game, filename, ax2[i], timestep = timestep)
         plot_rew_vs_ep(p1, p2, curr_rew_1, curr_rew_2, game, filename, ax3[i], timestep = timestep) 
         plot_esv(p1, p2, entry["all_Ms"], game, filename, ax4[i], timestep = timestep)
     
     fig1.suptitle(f'{p1} vs. {p2}: {game} Final Params vs. Timestep')
     fig2.suptitle(f'{p1} vs. {p2}: {game} {prob_or_thresh} of {act} vs. Timestep - {p2}')
     fig3.suptitle(f'{p1} vs. {p2}: {game} Reward vs. Timestep')
-    fig1.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_p_act.png')
-    fig2.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_p_act_vs_ep.png')
+    # fig1.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_p_act.png')
+    # fig2.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_p_act_vs_ep.png')
     fig3.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_rew_vs_ep.png')
     fig4.suptitle(f'{p1} vs. {p2}: {game} Expected State Visitation vs. Timestep')
     fig4.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_esv.png') 
@@ -450,31 +424,31 @@ def plot_ppo(data, quarts, filename, p1, p2, game):
     filename = filename.replace("/", "_")
 
     # plotting the rest    
-    fig1, ax1 = plt.subplots(1, 5, figsize=(40, 8))
-    fig2, ax2 = plt.subplots(1, 5, figsize=(40, 8))
-    fig3, ax3 = plt.subplots(1, 5, figsize=(40, 8))
-    fig4, ax4 = plt.subplots(1, 5, figsize=(40, 8))
-
+    fig1, ax1 = plt.subplots(1, 5, figsize=(36, 8))
+    fig2, ax2 = plt.subplots(1, 5, figsize=(36, 8))
+    fig3, ax3 = plt.subplots(1, 5, figsize=(36, 8))
+    fig4, ax4 = plt.subplots(1, 5, figsize=(36, 8))
+    
     for i, entry in enumerate(quarts):
-        curr_end_params = entry["end_params"]
-        curr_all_params = entry["all_params_1"]
+        # curr_end_params = entry["end_params"]
+        # curr_all_params = entry["all_params_1"]
         curr_rew_1 = entry["rewards_1"]
         curr_rew_2 = entry["rewards_2"]
         timestep = entry["timestep"]
-        plot_p_act(p1, p2, curr_end_params, game, filename, ax1[i], timestep = timestep)
-        plot_p_act_vs_ep(p1, p2, curr_all_params, game, filename, ax2[i], timestep = timestep)
+        # plot_p_act(p1, p2, curr_end_params, game, filename, ax1[i], timestep = timestep)
+        # plot_p_act_vs_ep(p1, p2, curr_all_params, game, filename, ax2[i], timestep = timestep)
         plot_rew_vs_ep(p1, p2, curr_rew_1, curr_rew_2, game, filename, ax3[i], timestep = timestep) 
-        if game.find("I") != -1: plot_esv(p1, p2, entry["all_Ms"], game, filename, ax4[i], timestep = timestep)
+        plot_esv(p1, p2, entry["all_Ms"], game, filename, ax4[i], timestep = timestep)
     
     fig1.suptitle(f'{p1} vs. {p2}: {game} Final Params vs. Timestep')
     fig2.suptitle(f'{p1} vs. {p2}: {game} {prob_or_thresh} of {act} vs. Timestep - {p2}')
     fig3.suptitle(f'{p1} vs. {p2}: {game} Reward vs. Timestep')
-    fig1.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_p_act.png')
-    fig2.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_p_act_vs_ep.png')
+    fig4.suptitle(f'{p1} vs. {p2}: {game} Expected State Visitation vs. Timestep')
+    for fig in [fig1, fig2, fig3, fig4]: fig.tight_layout(pad=2)
+    # fig1.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_p_act.png')
+    # fig2.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_p_act_vs_ep.png')
     fig3.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_rew_vs_ep.png')
-    if game.find("I") != -1: 
-        fig4.suptitle(f'{p1} vs. {p2}: {game} Expected State Visitation vs. Timestep')
-        fig4.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_esv.png') 
+    fig4.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_esv.png') 
 
 
 def main(filename, caller=None, opponent=None, game=None):
@@ -509,132 +483,18 @@ def main(filename, caller=None, opponent=None, game=None):
 
     quit()
 
+# arge = argparse.ArgumentParser()
+# arge.add_argument("--filename", type=str, default="self_IPD_test2")
+# arge.add_argument("--game", type=str, default="IPD")
+# arge.add_argument("--opponent", type=str, default="NL")
+# arge.add_argument("--caller", type=str, default=None)
+# args = arge.parse_args()
+
 if __name__ == "__main__":
-    filename = "self_IPD_test2"
-    main(filename, caller="self", game="IPD")
+    # filename = args.filename
+    # game = args.game
+    # opponent = args.opponent
+    # caller = args.caller
+    # main(filename, caller, opponent, game)
+
     quit()
-
-    if filename.find("self") != -1:
-        # this means that the filename contains "self"
-        self = True
-
-    if filename.find("nl") != -1:
-        # this means that the filename contains "self"
-        opponent = "NL "
-
-    if filename.find("nolambda") != -1:
-        nolambda = True
-    else:
-        nolambda = False
-
-    # Read the JSON file
-    with open(f'runs/{filename}.json', 'r') as file:
-        data = json.load(file)
-
-    # Extract the values
-    ep_values = []
-    rew_values = []
-    rew_vnl_values = []
-    nl_ep_values = []
-    opp_rew_values = []
-    opp_vnl_rew_values = []
-
-    if self:
-        for entry in data:
-            if(entry["other"]):
-                ep_values.append(entry["ep"])
-                rew_values.append(entry["rew 0"])
-                opp_rew_values.append(entry["rew 1"])
-            else:
-                nl_ep_values.append(entry["ep"])
-                rew_vnl_values.append(entry["rew 0"])
-                opp_vnl_rew_values.append(entry["rew 1"])
-    else:
-        for entry in data:
-            rew_values.append(entry["rew"])
-            opp_rew_values.append(entry["opp_rew"])
-
-    
-
-    # Plot the data
-    if not self:
-        plt.plot(rew_values, color='blue', label='M-FOS Reward')
-        plt.plot(opp_rew_values, color='red', label=f'Opponent {opponent}Reward')
-    else:
-        plt.plot(ep_values, rew_values, color='blue', label='M-FOS 0 Reward')
-        plt.plot(ep_values, opp_rew_values, color='red', label='M-FOS 1 Reward')
-        if not nolambda:
-            plt.plot(nl_ep_values, rew_vnl_values, color='tab:blue', label='M-FOS 0 vs NL Reward')
-            plt.plot(nl_ep_values, opp_vnl_rew_values, color='tab:red', label='M-FOS 1 vs NL Reward')
-
-    # Add labels and legend
-    plt.xlabel('Training Episode')
-    plt.ylabel('Reward')
-    plt.legend()
-
-    # change figure name from Figure 1 to Figure 2
-    filename = filename.replace("/", "_")
-
-    plt.title(f'{filename}')
-
-    # Show the plot
-    plt.savefig(f'images/{filename}.png')
-    plt.show()
-
-
-
-# ignore
-
-
-def plot_nons(end_params, env, num_episodes=50, diff=False):
-    if env=="IPD" or env =="diffIPD":
-        states=["CC","CD","DC","DD","s_0"]
-        act = "Cooperate"
-    elif env=="CHK" or env=="IHD":
-        states = ["SwSw","SwSt","StSw","StSt","s_0"]
-        act = "Swerve"
-    elif env=="IMP":
-        states = ["HH","HT","TH","TT","s_0"]
-        act = "Heads"
-    else: print("Invalid game")
-
-    scatter_points = {0: [], 1: [], 2: [], 3: [], 4: []}
-
-    for i in range(0, num_episodes, 2):
-        agent1 = end_params[i]
-        agent2 = end_params[i+1]
-        for j in range(env.NUM_STATES):
-            logits_1 = agent1[j]
-            probs_1 = torch.sigmoid(logits_1)
-            logits_2 = agent2[j]
-            probs_2 = torch.sigmoid(logits_2)
-
-            scatter_points[j].append((probs_1.item(), probs_2.item()))
-
-    colors = sns.color_palette()
-    #colors[0], colors[-1] = colors[-1], colors[0] # making it match LOLA
-
-    for j, color in zip(range(env.NUM_STATES), colors):
-        x, y = zip(*scatter_points[j])
-        plt.scatter(x, y, color=color, label=f'{states[j]}', alpha=0.3)
-
-    if diff:
-        plt.xlabel(f'Agent 1 Thresh({act})')
-        plt.ylabel(f'Agent 2 Thresh({act})')
-        plt.title('Agent Thresholds')
-    else:
-        plt.xlabel(f'Agent 1 Prob({act})')
-        plt.ylabel(f'Agent 2 Prob({act})')
-        plt.title('Agent Probabilities')
-    plt.grid(True)
-    plt.legend()
-
-    # Set square aspect ratio
-    plt.gca().set_aspect('equal')
-
-    # Set axis limits
-    plt.xlim(-0.05, 1.05)
-    plt.ylim(-0.05, 1.05)
-
-    plt.show()
-

@@ -6,6 +6,8 @@ import argparse
 import json
 from plot_bigtime import main as plot_all
 
+from tqdm import tqdm
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--game", type=str, required=True)
 parser.add_argument("--opponent", type=str, required=True)
@@ -99,36 +101,37 @@ if __name__ == "__main__":
                 # M_1 = M.mean(dim=0).squeeze().tolist()
                 all_Ms.append(M_1)
                 
-                if args.game.find("I") != -1: # iterated games 
-                    # params_1 = state[:batch_size, :] # has size batch_size x 10, so we need to split it
-                    params_1 = torch.split(state, [5, 5], dim=-1)[1] # second half of state = opponent
-                else: # proxy for oneshot games
-                    params_1 = torch.split(state, [1, 1], dim=-1)[1] 
+                # if args.game.find("I") != -1: # iterated games 
+                #     # params_1 = state[:batch_size, :] # has size batch_size x 10, so we need to split it
+                #     params_1 = torch.split(state, [5, 5], dim=-1)[1] # second half of state = opponent
+                # else: # proxy for oneshot games
+                #     params_1 = torch.split(state, [1, 1], dim=-1)[1] 
 
-                all_params_1.append(params_1[0,:].detach().tolist()) # just the first run of the batch
+                # all_params_1.append(params_1[0,:].detach().tolist()) # just the first run of the batch
+
                 # alternatively, take the mean of the batch
                 # all_params_1.append(params_1.mean(dim=0).squeeze().tolist())
                 rewards_1.append(reward.mean(dim=0).squeeze().tolist()) # MFOS reward
                 rewards_2.append(info.mean(dim=0).squeeze().tolist()) # opponent reward
             
-            if args.game.find("I") != -1: # iterated games
-                split_params = torch.split(state, [5, 5], dim=-1)
-            else: 
-                split_params = torch.split(state, [1, 1], dim=-1)
-            end_params = [split_params[0][:50].tolist(), split_params[1][:50].tolist()]
+            # if args.game.find("I") != -1: # iterated games
+            #     split_params = torch.split(state, [5, 5], dim=-1)
+            # else: 
+            #     split_params = torch.split(state, [1, 1], dim=-1)
+            # end_params = [split_params[0][:50].tolist(), split_params[1][:50].tolist()]
             
             quartile_dumps.append({
                 "game": args.game,
                 "opponent": args.opponent,
                 "timestep": i_episode,
-                "all_params_1": all_params_1,
-                "end_params": end_params,
+                # "all_params_1": all_params_1,
+                # "end_params": end_params,
                 "all_Ms": all_Ms,
                 "rewards_1": rewards_1,
                 "rewards_2": rewards_2,
             })
         else: 
-            for t in range(num_steps): # inner
+            for t in tqdm(range(num_steps)): # inner
 
                 # Running policy_old:
                 action = ppo.policy_old.act(state, memory)
