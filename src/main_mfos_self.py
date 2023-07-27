@@ -16,6 +16,7 @@ parser.add_argument("--entropy", type=float, default=0.01)
 parser.add_argument("--exp-name", type=str, default="")
 parser.add_argument("--checkpoint", type=str, default="")
 parser.add_argument("--tracing", action="store_true", default=False)
+parser.add_argument("--nn-game", action="store_true", default=False)
 args = parser.parse_args()
 
 
@@ -29,12 +30,12 @@ if __name__ == "__main__":
     lr = 0.0002  # parameters for Adam optimizer
     betas = (0.9, 0.999)
 
-    max_episodes = 256 # 1024 -> 256
-    batch_size = 1024 # 4096 -> 1024
+    max_episodes = 1024 # 1024
+    batch_size = 4096 # 4096
     random_seed = None
     num_steps = 100
 
-    save_freq = 100 # 1000
+    save_freq = 250
 
     lamb = 1.0
     if not args.tracing: lamb = -1.0 # never the NL opponent. jank, but seems like the minimal change needed
@@ -47,7 +48,8 @@ if __name__ == "__main__":
         with open(os.path.join('runs', name, "commandline_args.txt"), "w") as f:
             json.dump(args.__dict__, f, indent=2)
 
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu" if torch.backends.mps.is_available() else "cpu")
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu" if torch.backends.mps.is_available() else "cpu") # type: ignore
+    nn_game = args.nn_game
 
     #############################################
 
@@ -69,6 +71,7 @@ if __name__ == "__main__":
     # training loop
     rew_means = []
     quartile_dumps = []
+    i_episode = 0
 
     for i_episode in range(1, max_episodes + 1):
         print("=" * 100)
@@ -85,6 +88,7 @@ if __name__ == "__main__":
             running_reward_1 = torch.zeros(batch_size).to(device)
 
             all_params_1 = []
+            end_params = []
             all_Ms = []
             rewards_1 = []
             rewards_2 = []
@@ -116,37 +120,37 @@ if __name__ == "__main__":
                 # M_1 = M.mean(dim=0).squeeze().tolist()
                 all_Ms.append(M_1)
 
-                # =======
-                # # params 1 is supposed to recover MFOS 1's params aka p_ba_0
-                # if args.game.find("I") != -1: # iterated games
-                #     # params_1 = state[:batch_size, :] # has size batch_size x 10, so we need to split it
-                #     params_1 = torch.split(state_0, [5, 5], dim=-1)[0] # second half of state = opponent or self idk idc its symmetric?
-                #     # print(params_1.shape) # torch.Size([4096, 5])
-                # else: # proxy for oneshot games
-                #     params_1 = torch.split(state_0, [1, 1], dim=-1)[0] 
+                if not nn_game:
+                    # params 1 is supposed to recover MFOS 1's params aka p_ba_0
+                    if args.game.find("I") != -1: # iterated games
+                        # params_1 = state[:batch_size, :] # has size batch_size x 10, so we need to split it
+                        params_1 = torch.split(state_0, [5, 5], dim=-1)[0] # second half of state = opponent or self idk idc its symmetric?
+                        # print(params_1.shape) # torch.Size([4096, 5])
+                    else: # proxy for oneshot games
+                        params_1 = torch.split(state_0, [1, 1], dim=-1)[0] 
 
-                # all_params_1.append(params_1[0,:].detach().tolist()) # just the first run of the batch
-                # =======
+                    all_params_1.append(params_1[0,:].detach().tolist()) # just the first run of the batch
+                
                 
                 # alternatively, take the mean of the batch
                 # all_params_1.append(params_1.mean(dim=0).squeeze().tolist())
                 rewards_2.append(reward_0.mean(dim=0).squeeze().tolist()) # corresponds to MFOS 1
                 rewards_1.append(reward_1.mean(dim=0).squeeze().tolist()) # corresponds to MFOS 0
             
-            # =======
-            # if args.game.find("I") != -1: # iterated games
-            #     split_params = torch.split(state_0, [5, 5], dim=-1)
-            # else: 
-            #     split_params = torch.split(state_0, [1, 1], dim=-1)
-            # end_params = [split_params[1][:50].tolist(), split_params[0][:50].tolist()]
-            # =======
+            if not nn_game:
+                if args.game.find("I") != -1: # iterated games
+                    split_params = torch.split(state_0, [5, 5], dim=-1)
+                else: 
+                    split_params = torch.split(state_0, [1, 1], dim=-1)
+                end_params = [split_params[1][:50].tolist(), split_params[0][:50].tolist()]
+            
 
             quartile_dumps.append({
                 "game": args.game,
                 "opponent": "self",
                 "timestep": i_episode,
-                # "all_params_1": all_params_1,
-                # "end_params": end_params,
+                "all_params_1": all_params_1 if not nn_game else None,
+                "end_params": end_params if not nn_game else None,
                 "all_Ms": all_Ms,
                 "rewards_1": rewards_1,
                 "rewards_2": rewards_2,

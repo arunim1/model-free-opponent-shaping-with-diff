@@ -85,7 +85,7 @@ def plot_p_act(p1, p2, end_params, game, filename, ax=None, timestep=None):
     elif game.find("MP") != -1: act = "Heads"
     elif game.find("HD") != -1: act = "Swerve"
     elif game.find("SH") != -1: act = "Stag"
-    else: print("Invalid game")
+    else: act = "??", print("Invalid game")
 
     scatter_points = {0: [], 1: [], 2: [], 3: [], 4: []}
 
@@ -145,77 +145,6 @@ def plot_p_act(p1, p2, end_params, game, filename, ax=None, timestep=None):
         plt.close()
 
 
-def plot_p_act_vs_ep_med(p1, p2, all_params, game, filename, ax=None, timestep=None):  
-    '''
-    Plots the median probability of taking a certain action vs. training episode for two agents, and saves the plot to a file.
-    25th and 75th percentile probabilities are also shaded in.
-    '''
-    states = ["s_0"]
-    p2_nums = [0]
-    if game.find("I") != -1:
-        all_arr = np.array(all_params).reshape(len(all_params), 3, 5)
-        p2_nums.extend([1,3,2,4])
-        if game.find("PD") != -1:
-            states.extend(["CC","CD","DC","DD"])
-        elif game.find("MP") != -1:
-            states.extend(["HH","HT","TH","TT"])
-        elif game.find("HD") != -1:
-            states.extend(["SwSw", "SwSt", "StSw", "StSt"])
-        elif game.find("SH") != -1:
-            states.extend(["SS", "SH", "HS", "HH"])
-    else:
-        all_arr = np.array(all_params).reshape(len(all_params), 3, 1)
-    if game.find("PD") != -1: act = "Cooperate"
-    elif game.find("MP") != -1: act = "Heads"
-    elif game.find("HD") != -1: act = "Swerve"
-    elif game.find("SH") != -1: act = "Stag"
-    else: print("Invalid game")
-
-    prob_or_thresh = "Thresh" if (game.find("diff") != -1) else "Prob"
-    
-    figname = f"{p1}vs{p2}_{game}_p_act_vs_ep_med.png"
-
-    if p1 == p2:
-        p1 = f"{p1} 0"
-        p2 = f"{p2} 1"
-    later_ax = 1
-    if ax is None:
-        fig, ax = plt.subplots(1, 1, figsize = (8, 8))
-        later_ax = None
-
-    for i, state in enumerate(states):
-        # agent_actions = all_arr[:,:,i]
-        episodes = np.arange(all_arr.shape[0])
-
-        # Calculate the median action probability per episode
-        median_actions = all_arr[:, 0, i]
-        lower_actions = all_arr[:, 1, i]
-        upper_actions = all_arr[:, 2, i]
-        # Calculate the 25th and 75th percentiles
-        # lower_quartile = np.percentile(agent_actions, 25, axis=1)
-        # upper_quartile = np.percentile(agent_actions, 75, axis=1)
-
-        ax.plot(episodes, median_actions, label=f'{state}')
-        ax.fill_between(episodes, lower_actions, upper_actions, alpha=0.2)
-
-    ax.set_xlabel('Training Episode')
-    ax.set_ylabel(f'{prob_or_thresh} ({act}) - {p1}')
-    ax.legend()
-
-    ax.set_title(f'{p1} vs. {p2}: {game} {prob_or_thresh} of {act} vs. Training Episode - {p1}')
-    if timestep is not None:
-        ax.set_title(f'Timestep: {timestep}')
-
-    filename = filename.replace("/", "_")
-
-    if not os.path.isdir(f"images/{filename}"):
-        os.mkdir(f"images/{filename}")
-    if later_ax is None:
-        fig.savefig(f'images/{filename}/{figname}')
-        plt.clf()
-        plt.close()
-
-
 def plot_p_act_vs_ep(p1, p2, all_params, game, filename, ax=None, timestep=None):  
     '''
     Plots the probability of taking a certain action vs. training episode for two agents, over an example run (first of the batch). 
@@ -240,7 +169,7 @@ def plot_p_act_vs_ep(p1, p2, all_params, game, filename, ax=None, timestep=None)
     elif game.find("MP") != -1: act = "Heads"
     elif game.find("HD") != -1: act = "Swerve"
     elif game.find("SH") != -1: act = "Stag"
-    else: print("Invalid game")
+    else: act = "??", print("Invalid game")
 
     prob_or_thresh = "Thresh" if (game.find("diff") != -1) else "Prob"
 
@@ -284,6 +213,7 @@ def plot_esv(p1, p2, all_Ms, game, filename, ax=None, timestep=None):
     '''
     Plots the expected state visitation vs. training episode over an example run (first of the batch). 
     '''
+    states = []
     if game.find("PD") != -1:
         states = ["CC","CD","DC","DD"]
     elif game.find("MP") != -1:
@@ -341,25 +271,28 @@ def plot_esv(p1, p2, all_Ms, game, filename, ax=None, timestep=None):
         plt.close()
 
 
-def plot_non_mfos(data, filename): # FIXED!
+def plot_non_mfos(data, filename, nn_game=True): # FIXED!
     for entry in data:
         curr_game = entry["game"]
         curr_p1 = entry["p1"]
         curr_p2 = entry["p2"]
-        # curr_end_params = entry["end_params"]
-        # curr_all_params = entry["all_params_1"]
         curr_rew_1 = entry["rewards_1"]
         curr_rew_2 = entry["rewards_2"]
+        curr_Ms = entry["all_Ms"]
 
         plt.clf()
         plot_rew_vs_ep(p1=curr_p1, p2=curr_p2, game=curr_game, values_1=curr_rew_1, values_2=curr_rew_2, filename=filename)
-        # plot_p_act(p1=curr_p1, p2=curr_p2, end_params=curr_end_params, game=curr_game, filename=filename)
-        # plot_p_act_vs_ep(p1=curr_p1, p2=curr_p2, all_params=curr_all_params, game=curr_game, filename=filename)
-        curr_Ms = entry["all_Ms"]
         plot_esv(p1=curr_p1, p2=curr_p2, all_Ms=curr_Ms, game=curr_game, filename=filename)
 
+        if not nn_game:
+            curr_end_params = entry["end_params"]
+            curr_all_params = entry["all_params_1"]
+            plot_p_act(p1=curr_p1, p2=curr_p2, end_params=curr_end_params, game=curr_game, filename=filename)
+            plot_p_act_vs_ep(p1=curr_p1, p2=curr_p2, all_params=curr_all_params, game=curr_game, filename=filename)
+        
 
-def plot_self(data, quarts, filename, game):
+
+def plot_self(data, quarts, filename, game, nn_game=True):
     p1 = "MFOS 0"
     p2 = "MFOS 1"
     prob_or_thresh = "Thresh" if game.find("diff") != -1 else "Prob"
@@ -392,26 +325,29 @@ def plot_self(data, quarts, filename, game):
     plt.tight_layout(pad=2)
 
     for i, entry in enumerate(quarts):
-        # curr_end_params = entry["end_params"]
-        # curr_all_params = entry["all_params_1"]
         curr_rew_1 = entry["rewards_1"]
         curr_rew_2 = entry["rewards_2"]
         timestep = entry["timestep"]
-        # plot_p_act(p1, p2, curr_end_params, game, filename, ax1[i], timestep = timestep)
-        # plot_p_act_vs_ep(p1, p2, curr_all_params, game, filename, ax2[i], timestep = timestep)
+        if not nn_game:
+            curr_end_params = entry["end_params"]
+            curr_all_params = entry["all_params_1"]
+            plot_p_act(p1, p2, curr_end_params, game, filename, ax1[i], timestep = timestep)
+            plot_p_act_vs_ep(p1, p2, curr_all_params, game, filename, ax2[i], timestep = timestep)
         plot_rew_vs_ep(p1, p2, curr_rew_1, curr_rew_2, game, filename, ax3[i], timestep = timestep) 
         plot_esv(p1, p2, entry["all_Ms"], game, filename, ax4[i], timestep = timestep)
     
     fig1.suptitle(f'{p1} vs. {p2}: {game} Final Params vs. Timestep')
     fig2.suptitle(f'{p1} vs. {p2}: {game} {prob_or_thresh} of {act} vs. Timestep - {p2}')
     fig3.suptitle(f'{p1} vs. {p2}: {game} Reward vs. Timestep')
-    # fig1.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_p_act.png')
-    # fig2.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_p_act_vs_ep.png')
-    fig3.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_rew_vs_ep.png')
     fig4.suptitle(f'{p1} vs. {p2}: {game} Expected State Visitation vs. Timestep')
+
+    if not nn_game:
+        fig1.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_p_act.png')
+        fig2.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_p_act_vs_ep.png')
+    fig3.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_rew_vs_ep.png')
     fig4.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_esv.png') 
 
-def plot_ppo(data, quarts, filename, p1, p2, game):
+def plot_ppo(data, quarts, filename, p1, p2, game, nn_game=True):
     prob_or_thresh = "Thresh" if game.find("diff") != -1 else "Prob"
     act = "Cooperate" if game.find("PD") != -1 else "Heads" if game.find("MP") != -1 else "Swerve" if game.find("HD") != -1 else "Stag"
     # plotting the reward, opp_rew vs. time
@@ -430,13 +366,14 @@ def plot_ppo(data, quarts, filename, p1, p2, game):
     fig4, ax4 = plt.subplots(1, 5, figsize=(36, 8))
     
     for i, entry in enumerate(quarts):
-        # curr_end_params = entry["end_params"]
-        # curr_all_params = entry["all_params_1"]
         curr_rew_1 = entry["rewards_1"]
         curr_rew_2 = entry["rewards_2"]
         timestep = entry["timestep"]
-        # plot_p_act(p1, p2, curr_end_params, game, filename, ax1[i], timestep = timestep)
-        # plot_p_act_vs_ep(p1, p2, curr_all_params, game, filename, ax2[i], timestep = timestep)
+        if not nn_game:
+            curr_end_params = entry["end_params"]
+            curr_all_params = entry["all_params_1"]
+            plot_p_act(p1, p2, curr_end_params, game, filename, ax1[i], timestep = timestep)
+            plot_p_act_vs_ep(p1, p2, curr_all_params, game, filename, ax2[i], timestep = timestep)
         plot_rew_vs_ep(p1, p2, curr_rew_1, curr_rew_2, game, filename, ax3[i], timestep = timestep) 
         plot_esv(p1, p2, entry["all_Ms"], game, filename, ax4[i], timestep = timestep)
     
@@ -445,42 +382,41 @@ def plot_ppo(data, quarts, filename, p1, p2, game):
     fig3.suptitle(f'{p1} vs. {p2}: {game} Reward vs. Timestep')
     fig4.suptitle(f'{p1} vs. {p2}: {game} Expected State Visitation vs. Timestep')
     for fig in [fig1, fig2, fig3, fig4]: fig.tight_layout(pad=2)
-    # fig1.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_p_act.png')
-    # fig2.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_p_act_vs_ep.png')
+    if not nn_game:
+        fig1.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_p_act.png')
+        fig2.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_p_act_vs_ep.png')
     fig3.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_rew_vs_ep.png')
     fig4.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_esv.png') 
 
 
-def main(filename, caller=None, opponent=None, game=None):
+def main(filename, caller=None, opponent=None, game=None, nn_game=True):
+    filename_out = None
     for ext in ["_8192", "_4096", "_2048", "_1024", "_512", "_256", "_128", "_64", "_32", "_16", "_8", ""]:
         if os.path.isfile(f"runs/{filename}/out{ext}.json"):
             filename_out = f"{filename}/out{ext}"
             break
+    if filename_out is None:
+        print("No file found")
+        quit()
 
     with open(f'runs/{filename_out}.json', 'r') as file:
         data = json.load(file)
 
     if caller=="non_mfos":
-        plot_non_mfos(data, filename_out)
+        plot_non_mfos(data, filename_out, nn_game)
         quit()
     elif caller=="ppo":
         with open(f'runs/{filename}/quartile_dumps.json', 'r') as file:
             quarts = json.load(file)
-        plot_ppo(data, quarts, filename_out, p1 = "MFOS", p2 = opponent, game = game)
+        plot_ppo(data, quarts, filename_out, p1 = "MFOS", p2 = opponent, game = game, nn_game=nn_game)
         quit()
     elif caller=="self":
         with open(f'runs/{filename}/quartile_dumps.json', 'r') as file:
             quarts = json.load(file)
-        plot_self(data, quarts, filename_out, game=game)
+        plot_self(data, quarts, filename_out, game=game, nn_game=nn_game)
         quit()
 
-    if filename.find("non_mfos") != -1:
-        plot_non_mfos(data, filename)
-        quit()
-
-    if filename.find("self") != -1:
-        plot_self(data, filename)
-
+    print("Invalid caller")
     quit()
 
 # arge = argparse.ArgumentParser()
