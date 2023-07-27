@@ -92,6 +92,8 @@ if __name__ == "__main__":
             all_Ms = []
             rewards_1 = []
             rewards_2 = []
+
+            M_mean = torch.zeros(4).to(device)
             for t in tqdm(range(num_steps)):
 
                 # Running policy_old:
@@ -116,14 +118,12 @@ if __name__ == "__main__":
 
                 # if M is not None: # M was None for one-shot games, then arunim changed it
                 M_1 = M[0, :].detach().tolist() # just the first run of the batch
-                # alternatively, take the mean of the batch
-                # M_1 = M.mean(dim=0).squeeze().tolist()
                 all_Ms.append(M_1)
+                M_mean += M.mean(dim=0).squeeze() # has shape (4,)
 
                 if not nn_game:
                     # params 1 is supposed to recover MFOS 1's params aka p_ba_0
                     if args.game.find("I") != -1: # iterated games
-                        # params_1 = state[:batch_size, :] # has size batch_size x 10, so we need to split it
                         params_1 = torch.split(state_0, [5, 5], dim=-1)[0] # second half of state = opponent or self idk idc its symmetric?
                         # print(params_1.shape) # torch.Size([4096, 5])
                     else: # proxy for oneshot games
@@ -131,12 +131,11 @@ if __name__ == "__main__":
 
                     all_params_1.append(params_1[0,:].detach().tolist()) # just the first run of the batch
                 
-                
-                # alternatively, take the mean of the batch
-                # all_params_1.append(params_1.mean(dim=0).squeeze().tolist())
                 rewards_2.append(reward_0.mean(dim=0).squeeze().tolist()) # corresponds to MFOS 1
                 rewards_1.append(reward_1.mean(dim=0).squeeze().tolist()) # corresponds to MFOS 0
             
+            M_means = (M_mean / num_steps).tolist()
+
             if not nn_game:
                 if args.game.find("I") != -1: # iterated games
                     split_params = torch.split(state_0, [5, 5], dim=-1)
@@ -174,6 +173,8 @@ if __name__ == "__main__":
                     "other": True,
                     "rew 0": -l0.item(),
                     "rew 1": -l1.item(),
+                    "M_means_1": M_means,
+                    "M_means_2": M_means,
                 }
             )
 
@@ -183,7 +184,8 @@ if __name__ == "__main__":
 
             running_reward_0 = torch.zeros(batch_size).to(device)
             running_reward_1 = torch.zeros(batch_size).to(device)
-
+            
+            M_mean = torch.zeros(4).to(device)
             for t in tqdm(range(num_steps)):
 
                 # Running policy_old:
@@ -192,13 +194,15 @@ if __name__ == "__main__":
                 states, rewards, M = env.step(action_0, action_1)
                 state_0, state_1 = states
                 reward_0, reward_1 = rewards
+                M_mean += M.mean(dim=0).squeeze() # has shape (4,)
 
                 memory_0.rewards.append(reward_0)
                 memory_1.rewards.append(reward_1)
 
                 running_reward_0 += reward_0.squeeze(-1)
                 running_reward_1 += reward_1.squeeze(-1)
-                
+            M_means = (M_mean / num_steps).tolist()
+
             ppo_0.update(memory_0)
             ppo_1.update(memory_1)
 
@@ -217,6 +221,8 @@ if __name__ == "__main__":
                     "other": True,
                     "rew 0": -l0.item(),
                     "rew 1": -l1.item(),
+                    "M_means_1": M_means,
+                    "M_means_2": M_means,
                 }
             )
 
@@ -227,15 +233,18 @@ if __name__ == "__main__":
             running_reward_0 = torch.zeros(batch_size).to(device)
             running_opp_reward = torch.zeros(batch_size).to(device)
             
+            M_mean = torch.zeros(4).to(device)
             for t in range(num_steps):
                 # Running policy_old:
                 action = ppo_0.policy_old.act(state, memory_0)
                 state, reward, info, M = nl_env.step(action)
+                M_mean += M.mean(dim=0).squeeze() # has shape (4,)
 
                 memory_0.rewards.append(reward)
                 running_reward_0 += reward.squeeze(-1)
                 running_opp_reward += info.squeeze(-1)
-
+            M_means_1 = (M_mean / num_steps).tolist()
+            
             ppo_0.update(memory_0)
             memory_0.clear_memory()
 
@@ -247,15 +256,18 @@ if __name__ == "__main__":
 
             running_reward_1 = torch.zeros(batch_size).to(device)
             running_opp_reward = torch.zeros(batch_size).to(device)
-
+            
+            M_mean = torch.zeros(4).to(device)
             for t in range(num_steps):
                 # Running policy_old:
                 action = ppo_1.policy_old.act(state, memory_1)
                 state, reward, info, M = nl_env.step(action)
+                M_mean += M.mean(dim=0).squeeze() # has shape (4,)
 
                 memory_1.rewards.append(reward)
                 running_reward_1 += reward.squeeze(-1)
                 running_opp_reward += info.squeeze(-1)
+            M_means_2 = (M_mean / num_steps).tolist()
 
             ppo_1.update(memory_1)
             memory_1.clear_memory()
@@ -269,6 +281,8 @@ if __name__ == "__main__":
                     "other": False,
                     "rew 0": (running_reward_0.mean() / num_steps).item(),
                     "rew 1": (running_reward_1.mean() / num_steps).item(),
+                    "M_means_1": M_means_1,
+                    "M_means_2": M_means_2,
                 }
             )
 

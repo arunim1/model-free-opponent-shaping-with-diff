@@ -81,6 +81,7 @@ if __name__ == "__main__":
         running_opp_reward = torch.zeros(batch_size).to(device)
 
         last_reward = 0
+        M_means = []
 
         if i_episode in [1, max_episodes//4, max_episodes//2, 3*max_episodes//4, max_episodes]:
             
@@ -89,6 +90,8 @@ if __name__ == "__main__":
             all_Ms = []
             rewards_1 = []
             rewards_2 = []
+            
+            M_mean = torch.zeros(4).to(device)
 
             for t in range(num_steps): # inner
 
@@ -104,6 +107,7 @@ if __name__ == "__main__":
                 M_1 = M[0, :].detach().tolist() # just the first run of the batch
                 # alternatively, take the mean of the batch
                 # M_1 = M.mean(dim=0).squeeze().tolist()
+                M_mean += M.mean(dim=0).squeeze() # has shape (4,)
                 all_Ms.append(M_1)
                 
                 if not nn_game:
@@ -117,6 +121,8 @@ if __name__ == "__main__":
 
                 rewards_1.append(reward.mean(dim=0).squeeze().tolist()) # MFOS reward
                 rewards_2.append(info.mean(dim=0).squeeze().tolist()) # opponent reward
+            
+            M_means = (M_mean / num_steps).tolist()
             
             if not nn_game:
                 if args.game.find("I") != -1: # iterated games
@@ -136,16 +142,18 @@ if __name__ == "__main__":
                 "rewards_2": rewards_2,
             })
         else: 
+            M_mean = torch.zeros(4).to(device)
             for t in tqdm(range(num_steps)): # inner
-
                 # Running policy_old:
                 action = ppo.policy_old.act(state, memory)
                 state, reward, info, M = env.step(action)
+                M_mean += M.mean(dim=0).squeeze() # has shape (4,)
 
                 memory.rewards.append(reward)
                 running_reward += reward.squeeze(-1)
                 running_opp_reward += info.squeeze(-1)
                 last_reward = reward.squeeze(-1)
+            M_means = (M_mean / num_steps).tolist()
 
         ppo.update(memory)
         memory.clear_memory()
@@ -160,6 +168,7 @@ if __name__ == "__main__":
             {
                 "rew": (running_reward.mean() / num_steps).item(),
                 "opp_rew": (running_opp_reward.mean() / num_steps).item(),
+                "M_means": M_means,
             }
         )
 
