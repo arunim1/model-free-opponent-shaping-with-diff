@@ -1,10 +1,10 @@
 import os.path as osp
 import torch
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu" if torch.backends.mps.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu" if torch.backends.mps.is_available() else "cpu") # type: ignore
 torch.set_default_dtype(torch.float32)
 torch.set_default_tensor_type(torch.FloatTensor)
-torch.set_default_device(device)
+torch.set_default_device(device) # type: ignore
 
 def asymmetrize(p_m_1, p_m_2, eps=1e-3): 
     # [(2,2), (0,3+e), (3,0), (1,1+e)], i.e. changing player 2's incentive to defect
@@ -60,7 +60,7 @@ def diff_nn(th_0, th_1):
 
 
 def def_Ls_NN(p_m_1, p_m_2, bs, gamma_inner=0.96, iterated=False, diff_game=False):
-    def Ls(th): # th is a list of two tensors, each of shape (bs, 5x) for iterated games and (bs, 7) for one-shot diff games
+    def Ls(th): # th is a list of two tensors, each of shape (bs, 40) for iterated games 
         th[0] = th[0].clone().to(device) # really not quite sure why this is necessary but it is. 
         th[1] = th[1].clone().to(device)
         if iterated:
@@ -179,9 +179,6 @@ def def_Ls_threshold_game(p_m_1, p_m_2, bs, gamma_inner=0.96, iterated=False, di
     
     return Ls
 
-nn_game = True
-
-def_Ls = def_Ls_NN if nn_game else def_Ls_threshold_game
 
 def pd_batched(bs, gamma_inner=0.96, iterated=False, diff_game=False, asym=None):
     dims = [5, 5] if iterated else [1, 1]
@@ -298,7 +295,7 @@ def generate_mamaml(b, d, inner_env, game, inner_lr=1):
 
 
 class MetaGames:
-    def __init__(self, b, opponent="NL", game="IPD", mmapg_id=0):
+    def __init__(self, b, opponent="NL", game="IPD", mmapg_id=0, nn_game=False):
         """
         Opponent can be:
         NL = Naive Learner (gradient updates through environment).
@@ -314,6 +311,9 @@ class MetaGames:
         self.diff_game = True if game.find("diff") != -1 or game.find("Diff") != -1 else False
         self.iterated = True if game.find("I") != -1 else False
 
+        global def_Ls 
+        def_Ls = def_Ls_NN if nn_game else def_Ls_threshold_game
+
         if game.find("PD") != -1:
             d, self.game_batched = pd_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
             self.lr = 1
@@ -322,10 +322,10 @@ class MetaGames:
             self.lr = 0.1
         elif game.find("HD") != -1:
             d, self.game_batched = hd_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
-            self.lr = 0.1
+            self.lr = 1
         elif game.find("SH") != -1:
             d, self.game_batched = sh_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
-            self.lr = 0.1
+            self.lr = 1
         else:
             raise NotImplementedError
         
@@ -395,7 +395,7 @@ class MetaGames:
 
 
 class SymmetricMetaGames:
-    def __init__(self, b, game="IPD"):
+    def __init__(self, b, game="IPD", nn_game=False):
         self.gamma_inner = 0.96
 
         self.b = b
@@ -403,6 +403,9 @@ class SymmetricMetaGames:
 
         self.diff_game = True if game.find("diff") != -1 or game.find("Diff") != -1 else False
         self.iterated = True if game.find("I") != -1 else False
+
+        global def_Ls 
+        def_Ls = def_Ls_NN if nn_game else def_Ls_threshold_game
 
         if game.find("PD") != -1:
             d, self.game_batched = pd_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
@@ -412,10 +415,10 @@ class SymmetricMetaGames:
             self.lr = 0.1
         elif game.find("HD") != -1:
             d, self.game_batched = hd_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
-            self.lr = 0.1
+            self.lr = 1
         elif game.find("SH") != -1:
             d, self.game_batched = sh_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
-            self.lr = 0.1
+            self.lr = 1
         else:
             raise NotImplementedError
         
@@ -450,7 +453,7 @@ class SymmetricMetaGames:
 
 
 class NonMfosMetaGames:
-    def __init__(self, b, p1="NL", p2="NL", game="IPD", lr=None, mmapg_id=None):
+    def __init__(self, b, p1="NL", p2="NL", game="IPD", lr=None, mmapg_id=None, asym=None, nn_game=False, ccdr=False):
         """
         Opponent can be:
         NL = Naive Learner (gradient updates through environment).
@@ -463,23 +466,29 @@ class NonMfosMetaGames:
         self.p1 = p1
         self.p2 = p2
         self.game = game
+        self.ccdr = ccdr
+        
+        global def_Ls 
+        def_Ls = def_Ls_NN if nn_game else def_Ls_threshold_game
 
         self.diff_game = True if game.find("diff") != -1 or game.find("Diff") != -1 else False
         self.iterated = True if game.find("I") != -1 else False
 
         if game.find("PD") != -1:
-            d, self.game_batched = pd_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
+            d, self.game_batched = pd_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game, asym=asym)
             self.lr = 1
         elif game.find("MP") != -1:
-            d, self.game_batched = mp_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
+            d, self.game_batched = mp_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game, asym=asym)
             self.lr = 0.1
         elif game.find("HD") != -1:
-            d, self.game_batched = hd_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
-            self.lr = 0.1 if self.diff_game else 0.01 
+            d, self.game_batched = hd_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game, asym=asym)
+            # self.lr = 0.1 if self.diff_game else 0.01 
+            self.lr = 1
         elif game.find("SH") != -1:
-            d, self.game_batched = sh_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
-            self.lr = 3.612
-            self.lr *= 0.01 if self.diff_game and self.iterated else 0.1 if self.diff_game else 1
+            d, self.game_batched = sh_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game, asym=asym)
+            # self.lr = 3.612
+            # self.lr *= 0.01 if self.diff_game and self.iterated else 0.1 if self.diff_game else 1
+            self.lr = 1
         else:
             raise NotImplementedError
 
@@ -525,15 +534,17 @@ class NonMfosMetaGames:
         th_DR1 = [self.p2_th_ba, torch.randn_like(self.p1_th_ba)]
         th_DR2 = [torch.randn_like(self.p2_th_ba), self.p1_th_ba]
 
-        l1, l2, M = self.game_batched(th_ba) # l2 is for p1 / p1_th_ba, l1 is for p2 / p2_th_ba
-        CCDR = True
-        if CCDR: 
+        l1_reg, l2_reg, M = self.game_batched(th_ba) # l2 is for p1 aka p1_th_ba, l1 is for p2 aka p2_th_ba
+        
+        if self.ccdr: 
             _, l2_CC1, _ = self.game_batched(th_CC1)
             l1_CC2, _, _ = self.game_batched(th_CC2)
             l1_DR1, _, _ = self.game_batched(th_DR1)
             _, l2_DR2, _ = self.game_batched(th_DR2)
-            l1 = (l1 + l1_CC2 + l1_DR1)/3  # be careful because of how messy this can be. double check. 
-            l2 = (l2 + l2_CC1 + l2_DR2)/3  # 
+            l1 = (l1_reg + l1_CC2 + l1_DR1)/3  
+            l2 = (l2_reg + l2_CC1 + l2_DR2)/3  
+        else:
+            l1, l2 = l1_reg, l2_reg
 
         # UPDATE P1
         if self.p1 == "NL" or self.p1 == "MAMAML":

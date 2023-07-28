@@ -7,7 +7,7 @@ if G is not None:
     G = str(G)
     G = f"_G{G}"
 else:
-    G = ""
+    G = "testingafterfix"
 
 diff_oneshot = ["diff" + game for game in base_games]
 iterated = ["I" + game for game in base_games]
@@ -17,7 +17,7 @@ opponents = ["NL", "LOLA"] # for MFOS_PPO
 
 # supported modes  are "self_trace", "self_no_tracing", "mfos_ppo"
 
-modes = ["mfos_ppo"]
+modes = ["self_trace", "self_no_tracing", "mfos_ppo"]
 
 for game in diff_oneshot + diff_iterated:
     # SELF with no tracing procedure
@@ -26,7 +26,8 @@ for game in diff_oneshot + diff_iterated:
             "python",
             "src/main_mfos_self.py",
             f"--game={game}",
-            f"--exp-name=self_{game}{G}_notrace_nn0.2",
+            f"--exp-name=self_{game}{G}_notrace",
+            # "--nn-game",
         ]
         print("Executing command:", " ".join(command))
         result = subprocess.run(command, capture_output=False, text=True)
@@ -42,8 +43,9 @@ for game in diff_oneshot + diff_iterated:
             "python",
             "src/main_mfos_self.py",
             f"--game={game}",
-            f"--exp-name=self_{game}{G}_traced_nn0.2",
-            f"--tracing"
+            f"--exp-name=self_{game}{G}_traced",
+            f"--tracing",
+            # "--nn-game",
         ]
         print("Executing command:", " ".join(command))
         result = subprocess.run(command, capture_output=False, text=True)

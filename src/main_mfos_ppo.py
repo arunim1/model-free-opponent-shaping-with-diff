@@ -49,7 +49,7 @@ if __name__ == "__main__":
     #############################################
 
     # creating environment
-    env = MetaGames(batch_size, opponent=args.opponent, game=args.game, mmapg_id=args.mamaml_id)
+    env = MetaGames(batch_size, opponent=args.opponent, game=args.game, mmapg_id=args.mamaml_id, nn_game=nn_game)
 
     action_dim = env.d
     state_dim = env.d * 2

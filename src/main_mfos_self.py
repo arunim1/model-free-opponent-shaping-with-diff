@@ -30,10 +30,10 @@ if __name__ == "__main__":
     lr = 0.0002  # parameters for Adam optimizer
     betas = (0.9, 0.999)
 
-    max_episodes = 1024 # 1024
-    batch_size = 4096 # 4096
+    max_episodes = 16 # 1024
+    batch_size = 16 # 4096
     random_seed = None
-    num_steps = 100
+    num_steps = 10
 
     save_freq = 250
 
@@ -54,7 +54,7 @@ if __name__ == "__main__":
     #############################################
 
     # creating environment
-    env = SymmetricMetaGames(batch_size, game=args.game)
+    env = SymmetricMetaGames(batch_size, game=args.game, nn_game=nn_game)
 
     action_dim = env.d
     state_dim = env.d * 2
@@ -65,7 +65,7 @@ if __name__ == "__main__":
     ppo_0 = PPO(state_dim, action_dim, lr, betas, gamma, K_epochs, eps_clip, entropy=args.entropy)
     ppo_1 = PPO(state_dim, action_dim, lr, betas, gamma, K_epochs, eps_clip, entropy=args.entropy)
 
-    nl_env = MetaGames(batch_size, game=args.game)
+    nl_env = MetaGames(batch_size, game=args.game, nn_game=nn_game)
 
     print(lr, betas)
     # training loop
@@ -92,16 +92,16 @@ if __name__ == "__main__":
             all_Ms = []
             rewards_1 = []
             rewards_2 = []
+            M_means = []
 
             M_mean = torch.zeros(4).to(device)
             for t in tqdm(range(num_steps)):
 
                 # Running policy_old:
-                action_0 = ppo_0.policy_old.act(state_0, memory_0) # actions are "raw"/unsigmoided params
+                action_0 = ppo_0.policy_old.act(state_0, memory_0) 
                 action_1 = ppo_1.policy_old.act(state_1, memory_1)
                 states, rewards, M = env.step(action_0, action_1)
                 state_0, state_1 = states 
-                # state_0 is like torch.cat((p_ba_0.detach(), p_ba_1.detach()), dim=-1)
                 reward_0, reward_1 = rewards
                 # rewards is l1, l2 = self.game_batched([p_ba_0, p_ba_1])
                 # from below, l1 is for MFOS 1, l2 is for MFOS 0
@@ -114,9 +114,6 @@ if __name__ == "__main__":
                 running_reward_0 += reward_0.squeeze(-1)
                 running_reward_1 += reward_1.squeeze(-1)
 
-                # print(state_0.shape) # torch.Size([4096, 10]) = torch.sigmoid(torch.cat((p_ba_0.detach(), p_ba_1.detach()), dim=-1))
-
-                # if M is not None: # M was None for one-shot games, then arunim changed it
                 M_1 = M[0, :].detach().tolist() # just the first run of the batch
                 all_Ms.append(M_1)
                 M_mean += M.mean(dim=0).squeeze() # has shape (4,)
@@ -125,8 +122,7 @@ if __name__ == "__main__":
                     # params 1 is supposed to recover MFOS 1's params aka p_ba_0
                     if args.game.find("I") != -1: # iterated games
                         params_1 = torch.split(state_0, [5, 5], dim=-1)[0] # second half of state = opponent or self idk idc its symmetric?
-                        # print(params_1.shape) # torch.Size([4096, 5])
-                    else: # proxy for oneshot games
+                    else: # one-shot games
                         params_1 = torch.split(state_0, [1, 1], dim=-1)[0] 
 
                     all_params_1.append(params_1[0,:].detach().tolist()) # just the first run of the batch
@@ -184,6 +180,8 @@ if __name__ == "__main__":
 
             running_reward_0 = torch.zeros(batch_size).to(device)
             running_reward_1 = torch.zeros(batch_size).to(device)
+            M_means_1 = []
+            M_means_2 = []
             
             M_mean = torch.zeros(4).to(device)
             for t in tqdm(range(num_steps)):

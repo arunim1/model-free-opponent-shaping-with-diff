@@ -193,8 +193,9 @@ def plot_p_act_vs_ep(p1, p2, all_params, game, filename, ax=None, timestep=None)
     ax.set_xlabel('Training Episode')
     if timestep is None: ax.set_ylabel(f'{prob_or_thresh} ({act}) - {p1}') # proxy for MFOS/Meta game 
     else: ax.set_ylabel(f'{prob_or_thresh} ({act}) - {p2}') 
-
-    ax.set_ylim(0, 1)
+    
+    offset = 1 * 0.05  # 5% offset
+    ax.set_ylim(-offset, 1 + offset)
     ax.legend()
     ax.set_title(f'{p1} vs. {p2}: {game} {prob_or_thresh} of {act} vs. Training Episode - {p1}')
     if timestep is not None:
@@ -271,7 +272,7 @@ def plot_esv(p1, p2, all_Ms, game, filename, ax=None, timestep=None):
         plt.close()
 
 
-def plot_non_mfos(data, filename, nn_game=True): # FIXED!
+def plot_non_mfos(data, filename): # FIXED!
     for entry in data:
         curr_game = entry["game"]
         curr_p1 = entry["p1"]
@@ -284,13 +285,12 @@ def plot_non_mfos(data, filename, nn_game=True): # FIXED!
         plot_rew_vs_ep(p1=curr_p1, p2=curr_p2, game=curr_game, values_1=curr_rew_1, values_2=curr_rew_2, filename=filename)
         plot_esv(p1=curr_p1, p2=curr_p2, all_Ms=curr_Ms, game=curr_game, filename=filename)
 
-        if not nn_game:
+        if entry["end_params"] is not None and entry["all_params_1"] is not None:
             curr_end_params = entry["end_params"]
             curr_all_params = entry["all_params_1"]
             plot_p_act(p1=curr_p1, p2=curr_p2, end_params=curr_end_params, game=curr_game, filename=filename)
             plot_p_act_vs_ep(p1=curr_p1, p2=curr_p2, all_params=curr_all_params, game=curr_game, filename=filename)
         
-
 
 def plot_self(data, quarts, filename, game, nn_game=True):
     p1 = "MFOS 0"
@@ -318,11 +318,10 @@ def plot_self(data, quarts, filename, game, nn_game=True):
     filename = filename.replace("/", "_")
 
     # plotting the rest    
-    fig1, ax1 = plt.subplots(1, 5, figsize=(40, 8))
-    fig2, ax2 = plt.subplots(1, 5, figsize=(40, 8))
-    fig3, ax3 = plt.subplots(1, 5, figsize=(40, 8))
-    fig4, ax4 = plt.subplots(1, 5, figsize=(40, 8))
-    plt.tight_layout(pad=2)
+    fig1, ax1 = plt.subplots(1, 5, figsize=(36, 8))
+    fig2, ax2 = plt.subplots(1, 5, figsize=(36, 8))
+    fig3, ax3 = plt.subplots(1, 5, figsize=(36, 8))
+    fig4, ax4 = plt.subplots(1, 5, figsize=(36, 8))
 
     for i, entry in enumerate(quarts):
         curr_rew_1 = entry["rewards_1"]
@@ -340,12 +339,13 @@ def plot_self(data, quarts, filename, game, nn_game=True):
     fig2.suptitle(f'{p1} vs. {p2}: {game} {prob_or_thresh} of {act} vs. Timestep - {p2}')
     fig3.suptitle(f'{p1} vs. {p2}: {game} Reward vs. Timestep')
     fig4.suptitle(f'{p1} vs. {p2}: {game} Expected State Visitation vs. Timestep')
-
+    for fig in [fig1, fig2, fig3, fig4]: fig.tight_layout(pad=2)
     if not nn_game:
         fig1.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_p_act.png')
         fig2.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_p_act_vs_ep.png')
     fig3.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_rew_vs_ep.png')
     fig4.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_esv.png') 
+
 
 def plot_ppo(data, quarts, filename, p1, p2, game, nn_game=True):
     prob_or_thresh = "Thresh" if game.find("diff") != -1 else "Prob"
@@ -403,7 +403,7 @@ def main(filename, caller=None, opponent=None, game=None, nn_game=True):
         data = json.load(file)
 
     if caller=="non_mfos":
-        plot_non_mfos(data, filename_out, nn_game)
+        plot_non_mfos(data, filename_out)
         quit()
     elif caller=="ppo":
         with open(f'runs/{filename}/quartile_dumps.json', 'r') as file:
