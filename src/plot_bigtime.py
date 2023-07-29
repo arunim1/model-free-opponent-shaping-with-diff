@@ -280,16 +280,25 @@ def plot_non_mfos(data, filename): # FIXED!
         curr_rew_1 = entry["rewards_1"]
         curr_rew_2 = entry["rewards_2"]
         curr_Ms = entry["all_Ms"]
+        
+        if entry["ccdr"]:
+            fname = f'{filename}_ccdr'
+        else:
+            fname = f'{filename}'
+        if entry["nn_game"]:
+            fname = f'{fname}_nn'
+        else:
+            fname = f'{fname}'
 
         plt.clf()
-        plot_rew_vs_ep(p1=curr_p1, p2=curr_p2, game=curr_game, values_1=curr_rew_1, values_2=curr_rew_2, filename=filename)
-        plot_esv(p1=curr_p1, p2=curr_p2, all_Ms=curr_Ms, game=curr_game, filename=filename)
+        plot_rew_vs_ep(p1=curr_p1, p2=curr_p2, game=curr_game, values_1=curr_rew_1, values_2=curr_rew_2, filename=fname)
+        plot_esv(p1=curr_p1, p2=curr_p2, all_Ms=curr_Ms, game=curr_game, filename=fname)
 
         if entry["end_params"] is not None and entry["all_params_1"] is not None:
             curr_end_params = entry["end_params"]
             curr_all_params = entry["all_params_1"]
-            plot_p_act(p1=curr_p1, p2=curr_p2, end_params=curr_end_params, game=curr_game, filename=filename)
-            plot_p_act_vs_ep(p1=curr_p1, p2=curr_p2, all_params=curr_all_params, game=curr_game, filename=filename)
+            plot_p_act(p1=curr_p1, p2=curr_p2, end_params=curr_end_params, game=curr_game, filename=fname)
+            plot_p_act_vs_ep(p1=curr_p1, p2=curr_p2, all_params=curr_all_params, game=curr_game, filename=fname)
         
 
 def plot_self(data, quarts, filename, game, nn_game=True):

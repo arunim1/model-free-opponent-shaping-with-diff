@@ -11,8 +11,8 @@ parser.add_argument("--exp-name", type=str, default="")
 args = parser.parse_args()
 
 if __name__ == "__main__":
-    batch_size = 4096
-    num_steps = 100
+    batch_size = 128 # 4096
+    num_steps = 100 # 100
     name = args.exp_name
 
     print(f"RUNNING NAME: {name}")
@@ -43,8 +43,8 @@ if __name__ == "__main__":
 
     lrs = [None]
     asymmetries = [None]
-    ccdrs = [False]
-    nn_games = [False]
+    # ccdrs = [False]
+    # nn_games = [False]
 
 
     for game in all_games: 
@@ -117,4 +117,4 @@ if __name__ == "__main__":
 
     print("Running plot_bigtime.py with filename: ", name)
 
-    plot_all(name, caller="non_mfos", nn_game=nn_game)
+    plot_all(name, caller="non_mfos")

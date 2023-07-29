@@ -1,5 +1,7 @@
 import os.path as osp
 import torch
+from torch import nn
+
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu" if torch.backends.mps.is_available() else "cpu") # type: ignore
 torch.set_default_dtype(torch.float32)
@@ -13,6 +15,39 @@ def asymmetrize(p_m_1, p_m_2, eps=1e-3):
     p_m_1 += torch.tensor([[0, eps], [0, eps]]).to(device)  # correct if p_m_1 corresponds to player 2's loss 
     p_m_2 += torch.tensor([[0, 0], [0, 0]]).to(device)
     return p_m_1, p_m_2
+
+
+# class FFNN_oneshot(nn.Module):
+#     def __init__(self):
+#         super(FFNN_oneshot, self).__init__()
+#         self.network = nn.Sequential(
+#             nn.Linear(1, 40),
+#             nn.ReLU(),
+#             nn.Linear(40, 40),
+#             nn.ReLU(),
+#             nn.Linear(40, 40),
+#             nn.ReLU(),
+#             nn.Linear(40, 1),
+#         )
+
+#     def forward(self, x):
+#         return self.network(x)
+
+# class FFNN_iter(nn.Module):
+#     def __init__(self):
+#         super(FFNN_iter, self).__init__()
+#         self.network = nn.Sequential(
+#             nn.Linear(1, 40),
+#             nn.ReLU(),
+#             nn.Linear(40, 40),
+#             nn.ReLU(),
+#             nn.Linear(40, 40),
+#             nn.ReLU(),
+#             nn.Linear(40, 5),
+#         )
+
+#     def forward(self, x):
+#         return self.network(x)
 
 
 def diff_nn(th_0, th_1):
@@ -45,18 +80,49 @@ def diff_nn(th_0, th_1):
         b1_1, b1_2 = th_0[:, 5:10].unsqueeze(1).unsqueeze(-1), th_1[:, 5:10].unsqueeze(1).unsqueeze(-1)  # has size (bs, 1, 5, 1)
         W2_1, W2_2 = th_0[:, 10:35].reshape((bs, 5, 5)), th_1[:, 10:35].reshape((bs, 5, 5)) # has length 25
         b2_1, b2_2 = th_0[:, 35:40], th_1[:, 35:40] # has length 5
+    if th_0.shape[1] == 7 or th_0.shape[1] == 40:
+        x1_1, x1_2 = torch.relu(diff_inputs_repeated * W1_1 + b1_1), torch.relu(diff_inputs_repeated * W1_2 + b1_2)  # each has size (bs, 100, 2, 1)
 
-    x1_1, x1_2 = torch.relu(diff_inputs_repeated * W1_1 + b1_1), torch.relu(diff_inputs_repeated * W1_2 + b1_2)  # each has size (bs, 100, 2, 1)
+        b2_1_u, b2_2_u = b2_1.unsqueeze(1), b2_2.unsqueeze(1) 
+        x1_1_u, x1_2_u = x1_1.squeeze(-1), x1_2.squeeze(-1)  # each has size (bs, 1, 100, 2)
 
-    b2_1_u, b2_2_u = b2_1.unsqueeze(1), b2_2.unsqueeze(1) 
-    x1_1_u, x1_2_u = x1_1.squeeze(-1), x1_2.squeeze(-1)  # each has size (bs, 1, 100, 2)
+        # Note: Using torch.matmul here instead of torch.bmm
+        x2_1, x2_2 = torch.matmul(x1_1_u, W2_1) + b2_1_u, torch.matmul(x1_2_u, W2_2) + b2_2_u
 
-    # Note: Using torch.matmul here instead of torch.bmm
-    x2_1, x2_2 = torch.matmul(x1_1_u, W2_1) + b2_1_u, torch.matmul(x1_2_u, W2_2) + b2_2_u
+        p_1, p_2 = torch.sigmoid(x2_1), torch.sigmoid(x2_2)
+    
+    if th_0.shape[1] == 3565 or th_0.shape[1] == 3401:
+        W1_1, W1_2 = th_0[:, 0:40].unsqueeze(1).unsqueeze(-1), th_1[:, 0:40].unsqueeze(1).unsqueeze(-1)  # has size (bs, 1, 40, 1)
+        b1_1, b1_2 = th_0[:, 40:80].unsqueeze(1).unsqueeze(-1), th_1[:, 40:80].unsqueeze(1).unsqueeze(-1)  # has size (bs, 1, 40, 1)
+        W2_1, W2_2 = th_0[:, 80:1680].reshape((bs, 40, 40)), th_1[:, 80:1680].reshape((bs, 40, 40)) # has length 1600
+        b2_1, b2_2 = th_0[:, 1680:1720], th_1[:, 1680:1720] # has length 40
+        W3_1, W3_2 = th_0[:, 1720:3320].reshape((bs, 40, 40)), th_1[:, 1720:3320].reshape((bs, 40, 40)) # has length 1600
+        b3_1, b3_2 = th_0[:, 3320:3360], th_1[:, 3320:3360] # has length 40
+        if th_0.shape[1] == 3565:
+            W4_1, W4_2 = th_0[:, 3360:3560].reshape((bs, 40, 5)), th_1[:, 3360:3560].reshape((bs, 40, 5)) # has length 200
+            b4_1, b4_2 = th_0[:, 3560:3565], th_1[:, 3560:3565] # has length 5
+        else:
+            W4_1, W4_2 = th_0[:, 3360:3400].reshape((bs, 40, 1)), th_1[:, 3360:3400].reshape((bs, 40, 1))
+            b4_1, b4_2 = th_0[:, 3400:3401], th_1[:, 3400:3401]
+        x1_1, x1_2 = torch.relu(diff_inputs_repeated * W1_1 + b1_1), torch.relu(diff_inputs_repeated * W1_2 + b1_2)  # each has size (bs, 100, 40, 1)
+        x1_1_u, x1_2_u = x1_1.squeeze(-1), x1_2.squeeze(-1)  # each has size (bs, 1, 100, 40)
+        b2_1_u, b2_2_u = b2_1.unsqueeze(1), b2_2.unsqueeze(1)
+        x2_1, x2_2 = torch.relu(torch.matmul(x1_1_u, W2_1) + b2_1_u), torch.relu(torch.matmul(x1_2_u, W2_2) + b2_2_u)
+        x2_1_u, x2_2_u = x2_1.squeeze(1), x2_2.squeeze(1)  # each has size (bs, 100, 40)
+        b3_1_u, b3_2_u = b3_1.unsqueeze(1), b3_2.unsqueeze(1)
+        x3_1, x3_2 = torch.relu(torch.matmul(x2_1_u, W3_1) + b3_1_u), torch.relu(torch.matmul(x2_2_u, W3_2) + b3_2_u)
+        x3_1_u, x3_2_u = x3_1.squeeze(1), x3_2.squeeze(1)  # each has size (bs, 100, 40)
+        b4_1_u, b4_2_u = b4_1.unsqueeze(1), b4_2.unsqueeze(1)
+        x4_1, x4_2 = torch.matmul(x3_1_u, W4_1) + b4_1_u, torch.matmul(x3_2_u, W4_2) + b4_2_u
+        p_1, p_2 = torch.sigmoid(x4_1), torch.sigmoid(x4_2)
 
-    p_1, p_2 = torch.sigmoid(x2_1), torch.sigmoid(x2_2)
+    if p_1.shape[2] == 5: # size is (bs, 100, 5)
+        diff_output = torch.mean(torch.abs(p_1 - p_2), dim=(1,2)).unsqueeze(-1)
+        # has size (bs, 1)
+    else: # size is (bs, 100, 1)
+        diff_output = torch.mean(torch.abs(p_1 - p_2), dim=1)
 
-    return torch.mean(torch.abs(p_1 - p_2), dim=1)
+    return diff_output
 
 
 def def_Ls_NN(p_m_1, p_m_2, bs, gamma_inner=0.96, iterated=False, diff_game=False):
@@ -71,20 +137,35 @@ def def_Ls_NN(p_m_1, p_m_2, bs, gamma_inner=0.96, iterated=False, diff_game=Fals
                 diff2 = diff + 0.1 * torch.rand_like(diff)
 
                 # first layer
-                W1_1, W1_2 = th[0][:, 0:5], th[1][:, 0:5] # has length 5
-                b1_1, b1_2 = th[0][:, 5:10], th[1][:, 5:10] # has length 5
+                W1_1, W1_2 = th[0][:, 0:40], th[1][:, 0:40] # has length 40
+                b1_1, b1_2 = th[0][:, 40:80], th[1][:, 40:80] 
+
                 x1_1, x1_2 = torch.relu(diff1 * W1_1 + b1_1), torch.relu(diff2 * W1_2 + b1_2)
-                # second layer goes from 5 to 5, meaning each matrix is 5x5, and there are 5 outputs so 5 biases
-                W2_1, W2_2 = th[0][:, 10:35].reshape((bs, 5, 5)), th[1][:, 10:35].reshape((bs, 5, 5)) # has length 25
-                b2_1, b2_2 = th[0][:, 35:40], th[1][:, 35:40] # has length 5
+                # second layer
+                W2_1, W2_2 = th[0][:, 80:1680].reshape((bs, 40, 40)), th[1][:, 80:1680].reshape((bs, 40, 40)) 
+                b2_1, b2_2 = th[0][:, 1680:1720], th[1][:, 1680:1720] # has length 40
                 b2_1_u, b2_2_u = b2_1.unsqueeze(1), b2_2.unsqueeze(1)
                 x1_1, x1_2 = x1_1.unsqueeze(1), x1_2.unsqueeze(1)
-                x2_1, x2_2 = torch.bmm(x1_1, W2_1) + b2_1_u, torch.bmm(x1_2, W2_2) + b2_2_u
-                x2_1, x2_2 = x2_1.squeeze(1), x2_2.squeeze(1) # outputs of NN
+                x2_1, x2_2 = torch.relu(torch.bmm(x1_1, W2_1) + b2_1_u), torch.relu(torch.bmm(x1_2, W2_2) + b2_2_u)
+                # x2_1, x2_2 = x2_1.squeeze(1), x2_2.squeeze(1) # outputs of NN
 
-                p_1_0, p_2_0 = torch.sigmoid(x2_1[:, 0:1]), torch.sigmoid(x2_2[:, 0:1])
-                p_1 = torch.reshape(torch.sigmoid(x2_1[:, 1:5]), (bs, 4, 1))
-                p_2 = torch.reshape(torch.sigmoid(torch.cat([x2_2[:, 1:2], x2_2[:, 3:4], x2_2[:, 2:3], x2_2[:, 4:5]], dim=-1)), (bs, 4, 1))
+                # third layer, also 40x40
+                W3_1, W3_2 = th[0][:, 1720:3320].reshape((bs, 40, 40)), th[1][:, 1720:3320].reshape((bs, 40, 40))
+                b3_1, b3_2 = th[0][:, 3320:3360], th[1][:, 3320:3360] # has length 40
+                b3_1_u, b3_2_u = b3_1.unsqueeze(1), b3_2.unsqueeze(1)
+                x3_1, x3_2 = torch.relu(torch.bmm(x2_1, W3_1) + b3_1_u), torch.relu(torch.bmm(x2_2, W3_2) + b3_2_u)
+
+                # fourth layer, final, 40x5
+                W4_1, W4_2 = th[0][:, 3360:3560].reshape((bs, 40, 5)), th[1][:, 3360:3560].reshape((bs, 40, 5))
+                b4_1, b4_2 = th[0][:, 3560:3565], th[1][:, 3560:3565] # has length 5
+                b4_1_u, b4_2_u = b4_1.unsqueeze(1), b4_2.unsqueeze(1)
+                x4_1, x4_2 = torch.bmm(x3_1, W4_1) + b4_1_u, torch.bmm(x3_2, W4_2) + b4_2_u
+                x4_1, x4_2 = x4_1.squeeze(1), x4_2.squeeze(1) # outputs of NN
+                
+                # total params is 3565
+                p_1_0, p_2_0 = torch.sigmoid(x4_1[:, 0:1]), torch.sigmoid(x4_2[:, 0:1])
+                p_1 = torch.reshape(torch.sigmoid(x4_1[:, 1:5]), (bs, 4, 1))
+                p_2 = torch.reshape(torch.sigmoid(torch.cat([x4_2[:, 1:2], x4_2[:, 3:4], x4_2[:, 2:3], x4_2[:, 4:5]], dim=-1)), (bs, 4, 1))
             else:
                 p_1_0, p_2_0 = torch.sigmoid(th[0][:, 0:1]), torch.sigmoid(th[1][:, 0:1])
                 p_1 = torch.reshape(torch.sigmoid(th[0][:, 1:5]), (bs, 4, 1))
@@ -99,27 +180,38 @@ def def_Ls_NN(p_m_1, p_m_2, bs, gamma_inner=0.96, iterated=False, diff_game=Fals
         
         else:
             if diff_game:
-                diff = diff_nn(th[0], th[1]) # has shape (bs, 1) 
+                diff = diff_nn(th[0], th[1]) # has shape (bs, 1)
 
-                # first layer
-                W1_1, W1_2 = th[0][:, 0:2], th[1][:, 0:2] # has length 2
-                b1_1, b1_2 = th[0][:, 2:4], th[1][:, 2:4] # has length 2
-                
                 diff1 = diff + 0.1 * torch.rand_like(diff)
                 diff2 = diff + 0.1 * torch.rand_like(diff)
 
-                # second layer
-                W2_1, W2_2 = th[0][:, 4:6].reshape((bs, 2, 1)), th[1][:, 4:6].reshape((bs, 2, 1))
-                b2_1, b2_2 = th[0][:, 6:7], th[1][:, 6:7] # each has size (bs, 1)
-                x1_1, x1_2 = torch.relu((diff1) * W1_1 + b1_1), torch.relu((diff2) * W1_2 + b1_2)
-                b2_1_u, b2_2_u = b2_1.unsqueeze(1), b2_2.unsqueeze(1)
-                # x1_1_u, x1_2_u = x1_1.unsqueeze(1), x1_2.unsqueeze(1) # each has size (bs, 1, 2)
-                x1_1_u = x1_1.unsqueeze(1)
-                x1_2_u = x1_2.unsqueeze(1)
-                x2_1, x2_2 = torch.bmm(x1_1_u, W2_1) + b2_1_u, torch.bmm(x1_2_u, W2_2) + b2_2_u
-                x2_1_u, x2_2_u = x2_1.squeeze(1), x2_2.squeeze(1) # outputs of NN
+                # first layer
+                W1_1, W1_2 = th[0][:, 0:40], th[1][:, 0:40] # has length 40
+                b1_1, b1_2 = th[0][:, 40:80], th[1][:, 40:80] 
 
-                p_1, p_2 = torch.sigmoid(x2_1_u), torch.sigmoid(x2_2_u)
+                x1_1, x1_2 = torch.relu(diff1 * W1_1 + b1_1), torch.relu(diff2 * W1_2 + b1_2)
+                # second layer
+                W2_1, W2_2 = th[0][:, 80:1680].reshape((bs, 40, 40)), th[1][:, 80:1680].reshape((bs, 40, 40)) 
+                b2_1, b2_2 = th[0][:, 1680:1720], th[1][:, 1680:1720] # has length 40
+                b2_1_u, b2_2_u = b2_1.unsqueeze(1), b2_2.unsqueeze(1)
+                x1_1, x1_2 = x1_1.unsqueeze(1), x1_2.unsqueeze(1)
+                x2_1, x2_2 = torch.relu(torch.bmm(x1_1, W2_1) + b2_1_u), torch.relu(torch.bmm(x1_2, W2_2) + b2_2_u)
+                # x2_1, x2_2 = x2_1.squeeze(1), x2_2.squeeze(1) # outputs of NN
+
+                # third layer, also 40x40
+                W3_1, W3_2 = th[0][:, 1720:3320].reshape((bs, 40, 40)), th[1][:, 1720:3320].reshape((bs, 40, 40))
+                b3_1, b3_2 = th[0][:, 3320:3360], th[1][:, 3320:3360] # has length 40
+                b3_1_u, b3_2_u = b3_1.unsqueeze(1), b3_2.unsqueeze(1)
+                x3_1, x3_2 = torch.relu(torch.bmm(x2_1, W3_1) + b3_1_u), torch.relu(torch.bmm(x2_2, W3_2) + b3_2_u)
+
+                # fourth layer, final, 40x1
+                W4_1, W4_2 = th[0][:, 3360:3400].reshape((bs, 40, 1)), th[1][:, 3360:3400].reshape((bs, 40, 1))
+                b4_1, b4_2 = th[0][:, 3400:3401], th[1][:, 3400:3401] # has length 1
+                b4_1_u, b4_2_u = b4_1.unsqueeze(1), b4_2.unsqueeze(1)
+                x4_1, x4_2 = torch.bmm(x3_1, W4_1) + b4_1_u, torch.bmm(x3_2, W4_2) + b4_2_u
+                
+                # total params is 3565
+                p_1, p_2 = torch.sigmoid(x4_1), torch.sigmoid(x4_2)
             else:
                 p_1, p_2 = torch.sigmoid(th[0]), torch.sigmoid(th[1])
 
@@ -332,7 +424,7 @@ class MetaGames:
         self.std = 1
         self.d = d[0]
 
-        if nn_game and self.diff_game: self.d = 40 if self.iterated else 7
+        if nn_game and self.diff_game: self.d = 3565 if self.iterated else 3401 # 40, 7
 
         self.opponent = opponent
         if self.opponent == "MAMAML":
@@ -425,7 +517,7 @@ class SymmetricMetaGames:
         self.std = 1
         self.d = d[0]
 
-        if nn_game and self.diff_game: self.d = 40 if self.iterated else 7
+        if nn_game and self.diff_game: self.d = 3565 if self.iterated else 3401 # 40, 7
 
 
     def reset(self, info=False):
@@ -497,7 +589,7 @@ class NonMfosMetaGames:
             self.lr = lr
         self.d = d[0]
         
-        if nn_game and self.diff_game: self.d = 40 if self.iterated else 7
+        if nn_game and self.diff_game: self.d = 3565 if self.iterated else 3401 # 40, 7
 
         self.init_th_ba = None
         if self.p1 == "MAMAML" or self.p2 == "MAMAML":
