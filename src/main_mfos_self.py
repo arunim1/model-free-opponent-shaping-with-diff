@@ -116,7 +116,7 @@ if __name__ == "__main__":
 
                 M_1 = M[0, :].detach().tolist() # just the first run of the batch
                 all_Ms.append(M_1)
-                M_mean += M.mean(dim=0).squeeze() # has shape (4,)
+                M_mean += M.detach().mean(dim=0).squeeze() # has shape (4,)
 
                 if not nn_game:
                     # params 1 is supposed to recover MFOS 1's params aka p_ba_0
@@ -192,7 +192,7 @@ if __name__ == "__main__":
                 states, rewards, M = env.step(action_0, action_1)
                 state_0, state_1 = states
                 reward_0, reward_1 = rewards
-                M_mean += M.mean(dim=0).squeeze() # has shape (4,)
+                M_mean += M.detach().mean(dim=0).squeeze() # has shape (4,)
 
                 memory_0.rewards.append(reward_0)
                 memory_1.rewards.append(reward_1)
@@ -236,7 +236,7 @@ if __name__ == "__main__":
                 # Running policy_old:
                 action = ppo_0.policy_old.act(state, memory_0)
                 state, reward, info, M = nl_env.step(action)
-                M_mean += M.mean(dim=0).squeeze() # has shape (4,)
+                M_mean += M.detach().mean(dim=0).squeeze() # has shape (4,)
 
                 memory_0.rewards.append(reward)
                 running_reward_0 += reward.squeeze(-1)
@@ -260,7 +260,7 @@ if __name__ == "__main__":
                 # Running policy_old:
                 action = ppo_1.policy_old.act(state, memory_1)
                 state, reward, info, M = nl_env.step(action)
-                M_mean += M.mean(dim=0).squeeze() # has shape (4,)
+                M_mean += M.detach().mean(dim=0).squeeze() # has shape (4,)
 
                 memory_1.rewards.append(reward)
                 running_reward_1 += reward.squeeze(-1)

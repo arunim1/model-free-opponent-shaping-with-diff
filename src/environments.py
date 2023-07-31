@@ -1,6 +1,7 @@
 import os.path as osp
 import torch
 from torch import nn
+import gc
 
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu" if torch.backends.mps.is_available() else "cpu") # type: ignore
@@ -62,7 +63,7 @@ def diff_nn(th_0, th_1):
     bs = th_0.shape[0]
 
     # Generate an array of inputs within the range [0, 1].
-    diff_inputs = torch.linspace(0, 0.2, 100).unsqueeze(1).unsqueeze(1).to(device)
+    diff_inputs = (torch.rand(100) * 0.2).unsqueeze(1).unsqueeze(1).to(device)
 
     # Repeat diff_inputs to make it have shape: (bs, 100, 1, 1)
     diff_inputs_repeated = diff_inputs.repeat(bs, 1, 1, 1)
@@ -209,7 +210,7 @@ def def_Ls_NN(p_m_1, p_m_2, bs, gamma_inner=0.96, iterated=False, diff_game=Fals
                 b4_1, b4_2 = th[0][:, 3400:3401], th[1][:, 3400:3401] # has length 1
                 b4_1_u, b4_2_u = b4_1.unsqueeze(1), b4_2.unsqueeze(1)
                 x4_1, x4_2 = torch.bmm(x3_1, W4_1) + b4_1_u, torch.bmm(x3_2, W4_2) + b4_2_u
-                
+
                 # total params is 3565
                 p_1, p_2 = torch.sigmoid(x4_1), torch.sigmoid(x4_2)
             else:
@@ -271,6 +272,23 @@ def def_Ls_threshold_game(p_m_1, p_m_2, bs, gamma_inner=0.96, iterated=False, di
     
     return Ls
 
+
+def sl_batched(bs, gamma_inner=0.96, iterated=False, diff_game=False, asym=None):
+    # silly game: you get -1 if you defect and 1 if you cooperate. regardless of what the other player does.
+    dims = [5, 5] if iterated else [1, 1]
+
+    payout_mat_1 = torch.Tensor([[1, -1], [-1, 1]]).to(device)
+    # payout_mat_1 = torch.Tensor([[-1, -3], [0, -2]]).to(device)
+
+    payout_mat_2 = payout_mat_1.T
+    if asym is not None:
+        payout_mat_1, payout_mat_2 = asymmetrize(payout_mat_1, payout_mat_2, asym)
+    payout_mat_1 = payout_mat_1.reshape((1, 2, 2)).repeat(bs, 1, 1)
+    payout_mat_2 = payout_mat_2.reshape((1, 2, 2)).repeat(bs, 1, 1)
+
+    Ls = def_Ls(p_m_1=payout_mat_1, p_m_2=payout_mat_2, bs=bs, gamma_inner=gamma_inner, iterated=iterated, diff_game=diff_game)
+
+    return dims, Ls
 
 def pd_batched(bs, gamma_inner=0.96, iterated=False, diff_game=False, asym=None):
     dims = [5, 5] if iterated else [1, 1]
@@ -581,12 +599,19 @@ class NonMfosMetaGames:
             # self.lr = 3.612
             # self.lr *= 0.01 if self.diff_game and self.iterated else 0.1 if self.diff_game else 1
             self.lr = 1
+        elif game.find("SL") != -1:
+            d, self.game_batched = sl_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game, asym=asym)
+            self.lr = 1
         else:
             raise NotImplementedError
 
         self.std = 1
         if lr is not None:
-            self.lr = lr
+            if len(lr) == 2:
+                self.lr = lr[0]
+                self.lr_2 = lr[1]
+            else:
+                self.lr = lr
         self.d = d[0]
         
         if nn_game and self.diff_game: self.d = 3565 if self.iterated else 3401 # 40, 7
@@ -647,7 +672,7 @@ class NonMfosMetaGames:
             losses = [l1, l2]
             grad_L = [[get_gradient(losses[j].sum(), th_ba[i]) for j in range(2)] for i in range(2)]
             term = (grad_L[0][0] * grad_L[0][1]).sum()
-            grad = grad_L[1][1] - self.lr * get_gradient(term, th_ba[1])
+            grad = grad_L[1][1] - self.lr_2 * get_gradient(term, th_ba[1])
             with torch.no_grad():
                 self.p1_th_ba -= grad * self.lr
         elif self.p1 == "STATIC":
@@ -664,15 +689,15 @@ class NonMfosMetaGames:
             losses = [l1, l2]
             grad_L = [[get_gradient(losses[j].sum(), th_ba[i]) for j in range(2)] for i in range(2)] 
             term = (grad_L[1][0] * grad_L[1][1]).sum()
-            grad = grad_L[0][0] - self.lr * get_gradient(term, th_ba[0])
+            grad = grad_L[0][0] - self.lr_2 * get_gradient(term, th_ba[0])
             with torch.no_grad():
                 self.p2_th_ba -= grad * self.lr
         elif self.p2 == "STATIC":
             pass
         else:
             raise NotImplementedError
-
+        
         if self.iterated:
-            return torch.sigmoid(torch.cat([last_p1_th_ba, last_p2_th_ba])), -l2 * (1 - self.gamma_inner), -l1 * (1 - self.gamma_inner), M
+            return torch.sigmoid(torch.cat([last_p1_th_ba, last_p2_th_ba])).detach(), (-l2 * (1 - self.gamma_inner)).detach(), (-l1 * (1 - self.gamma_inner)).detach(), M
         else:
-            return torch.sigmoid(torch.cat([last_p1_th_ba, last_p2_th_ba])), -l2.detach(), -l1.detach(), M
+            return torch.sigmoid(torch.cat([last_p1_th_ba, last_p2_th_ba])).detach(), -l2.detach(), -l1.detach(), M

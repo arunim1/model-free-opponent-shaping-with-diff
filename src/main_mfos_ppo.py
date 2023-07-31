@@ -107,7 +107,7 @@ if __name__ == "__main__":
                 M_1 = M[0, :].detach().tolist() # just the first run of the batch
                 # alternatively, take the mean of the batch
                 # M_1 = M.mean(dim=0).squeeze().tolist()
-                M_mean += M.mean(dim=0).squeeze() # has shape (4,)
+                M_mean += M.detach().mean(dim=0).squeeze() # has shape (4,)
                 all_Ms.append(M_1)
                 
                 if not nn_game:
@@ -147,7 +147,7 @@ if __name__ == "__main__":
                 # Running policy_old:
                 action = ppo.policy_old.act(state, memory)
                 state, reward, info, M = env.step(action)
-                M_mean += M.mean(dim=0).squeeze() # has shape (4,)
+                M_mean += M.detach().mean(dim=0).squeeze() # has shape (4,)
 
                 memory.rewards.append(reward)
                 running_reward += reward.squeeze(-1)

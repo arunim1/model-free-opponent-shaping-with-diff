@@ -73,7 +73,7 @@ def plot_p_act(p1, p2, end_params, game, filename, ax=None, timestep=None):
     p2_nums = [0]
     if game.find("I") != -1:
         p2_nums.extend([1,3,2,4])
-        if game.find("PD") != -1:
+        if game.find("PD") != -1 or game.find("SL") != -1:
             states.extend(["CC","CD","DC","DD"])
         elif game.find("MP") != -1:
             states.extend(["HH","HT","TH","TT"])
@@ -81,7 +81,7 @@ def plot_p_act(p1, p2, end_params, game, filename, ax=None, timestep=None):
             states.extend(["SwSw", "SwSt", "StSw", "StSt"])
         elif game.find("SH") != -1:
             states.extend(["SS", "SH", "HS", "HH"])
-    if game.find("PD") != -1: act = "Cooperate"
+    if game.find("PD") != -1 or game.find("SL") != -1: act = "Cooperate"
     elif game.find("MP") != -1: act = "Heads"
     elif game.find("HD") != -1: act = "Swerve"
     elif game.find("SH") != -1: act = "Stag"
@@ -155,7 +155,7 @@ def plot_p_act_vs_ep(p1, p2, all_params, game, filename, ax=None, timestep=None)
         all_arr = np.array(all_params).reshape(len(all_params), 1, 5) 
         p2_nums.extend([1,3,2,4])
 
-        if game.find("PD") != -1:
+        if game.find("PD") != -1 or game.find("SL") != -1:
             states.extend(["CC","CD","DC","DD"])
         elif game.find("MP") != -1:
             states.extend(["HH","HT","TH","TT"])
@@ -165,7 +165,7 @@ def plot_p_act_vs_ep(p1, p2, all_params, game, filename, ax=None, timestep=None)
             states.extend(["SS", "SH", "HS", "HH"])
     else:
         all_arr = np.array(all_params).reshape(len(all_params), 1, 1) 
-    if game.find("PD") != -1: act = "Cooperate"
+    if game.find("PD") != -1 or game.find("SL") != -1: act = "Cooperate"
     elif game.find("MP") != -1: act = "Heads"
     elif game.find("HD") != -1: act = "Swerve"
     elif game.find("SH") != -1: act = "Stag"
@@ -215,7 +215,7 @@ def plot_esv(p1, p2, all_Ms, game, filename, ax=None, timestep=None):
     Plots the expected state visitation vs. training episode over an example run (first of the batch). 
     '''
     states = []
-    if game.find("PD") != -1:
+    if game.find("PD") != -1 or game.find("SL") != -1:
         states = ["CC","CD","DC","DD"]
     elif game.find("MP") != -1:
         states = ["HH","HT","TH","TT"]
@@ -223,7 +223,7 @@ def plot_esv(p1, p2, all_Ms, game, filename, ax=None, timestep=None):
         states = ["SwSw", "SwSt", "StSw", "StSt"]
     elif game.find("SH") != -1:
         states = ["SS", "SH", "HS", "HH"]
-    if game.find("PD") != -1: act = "Cooperate"
+    if game.find("PD") != -1 or game.find("SL") != -1: act = "Cooperate"
     elif game.find("MP") != -1: act = "Heads"
     elif game.find("HD") != -1: act = "Swerve"
     elif game.find("SH") != -1: act = "Stag"
@@ -440,6 +440,6 @@ if __name__ == "__main__":
     # game = args.game
     # opponent = args.opponent
     # caller = args.caller
-    # main(filename, caller, opponent, game)
+    # main(filename, caller)
 
     quit()

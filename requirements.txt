@@ -2,3 +2,5 @@ torch
 matplotlib
 numpy
 seaborn
+optuna
+optuna_dashboard
