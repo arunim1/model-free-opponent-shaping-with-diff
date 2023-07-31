@@ -18,39 +18,6 @@ def asymmetrize(p_m_1, p_m_2, eps=1e-3):
     return p_m_1, p_m_2
 
 
-# class FFNN_oneshot(nn.Module):
-#     def __init__(self):
-#         super(FFNN_oneshot, self).__init__()
-#         self.network = nn.Sequential(
-#             nn.Linear(1, 40),
-#             nn.ReLU(),
-#             nn.Linear(40, 40),
-#             nn.ReLU(),
-#             nn.Linear(40, 40),
-#             nn.ReLU(),
-#             nn.Linear(40, 1),
-#         )
-
-#     def forward(self, x):
-#         return self.network(x)
-
-# class FFNN_iter(nn.Module):
-#     def __init__(self):
-#         super(FFNN_iter, self).__init__()
-#         self.network = nn.Sequential(
-#             nn.Linear(1, 40),
-#             nn.ReLU(),
-#             nn.Linear(40, 40),
-#             nn.ReLU(),
-#             nn.Linear(40, 40),
-#             nn.ReLU(),
-#             nn.Linear(40, 5),
-#         )
-
-#     def forward(self, x):
-#         return self.network(x)
-
-
 def diff_nn(th_0, th_1):
     # output = torch.sum(torch.abs(th_0 - th_1), dim=-1, keepdim=True)
     # output = torch.norm(th_0 - th_1, dim=-1, keepdim=True)
@@ -63,7 +30,7 @@ def diff_nn(th_0, th_1):
     bs = th_0.shape[0]
 
     # Generate an array of inputs within the range [0, 1].
-    diff_inputs = (torch.rand(100) * 0.2).unsqueeze(1).unsqueeze(1).to(device)
+    diff_inputs = (torch.rand(100) * 1.0).unsqueeze(1).unsqueeze(1).to(device)
 
     # Repeat diff_inputs to make it have shape: (bs, 100, 1, 1)
     diff_inputs_repeated = diff_inputs.repeat(bs, 1, 1, 1)
@@ -277,8 +244,7 @@ def sl_batched(bs, gamma_inner=0.96, iterated=False, diff_game=False, asym=None)
     # silly game: you get -1 if you defect and 1 if you cooperate. regardless of what the other player does.
     dims = [5, 5] if iterated else [1, 1]
 
-    payout_mat_1 = torch.Tensor([[1, -1], [-1, 1]]).to(device)
-    # payout_mat_1 = torch.Tensor([[-1, -3], [0, -2]]).to(device)
+    payout_mat_1 = torch.Tensor([[1, 1], [-1, -1]]).to(device)
 
     payout_mat_2 = payout_mat_1.T
     if asym is not None:
@@ -628,8 +594,11 @@ class NonMfosMetaGames:
             print(self.init_th_ba)
 
     def reset(self, info=False):
-        self.p1_th_ba = torch.nn.init.normal_(torch.empty((self.b, self.d), requires_grad=True), std=self.std).to(device)
-        self.p2_th_ba = torch.nn.init.normal_(torch.empty((self.b, self.d), requires_grad=True), std=self.std).to(device)
+        # self.p1_th_ba = torch.nn.init.normal_(torch.empty((self.b, self.d), requires_grad=True), std=self.std).to(device)
+        # self.p2_th_ba = torch.nn.init.normal_(torch.empty((self.b, self.d), requires_grad=True), std=self.std).to(device)
+        # using xavier_normal_
+        self.p1_th_ba = torch.nn.init.xavier_normal_(torch.empty((self.b, self.d), requires_grad=True)).to(device)
+        self.p2_th_ba = torch.nn.init.xavier_normal_(torch.empty((self.b, self.d), requires_grad=True)).to(device)
 
         if self.p1 == "MAMAML":
             self.p1_th_ba = self.init_th_ba.detach() * torch.ones((self.b, self.d), requires_grad=True).to(device)

@@ -3,6 +3,7 @@ from optuna_dashboard import run_server
 from itertools import product
 from tqdm import tqdm
 from multiprocessing import Pool
+import multiprocessing
 import json
 
 import torch
@@ -10,7 +11,7 @@ from environments import NonMfosMetaGames
 import subprocess
 import os
 
-device = torch.device("cpu" if torch.cuda.is_available() else "cpu" if torch.backends.mps.is_available() else "cpu") # type: ignore
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu" if torch.backends.mps.is_available() else "cpu") # type: ignore
 
 def worker(args):
     game, nn_game, ccdr, p1, p2, lr, num_steps, batch_size, device = args
@@ -36,7 +37,7 @@ def def_objective(in_game, in_nn_games=[True]):
         lr = (lr1, lr2)
         
         batch_size = 64 # 4096
-        num_steps = 500 # 100
+        num_steps = 100 # 100
     
         # base_games= ["PD", "MP", "HD", "SH"]
         base_games= [the_game]
@@ -79,16 +80,16 @@ def def_objective(in_game, in_nn_games=[True]):
     return objective
 
 if __name__ == "__main__":
-
+    multiprocessing.set_start_method('spawn')
     storage = optuna.storages.InMemoryStorage()
-    base_games= ["PD", "HD", "SH"]
-    nn_games = [[True], [False]]
+    base_games= ["PD"]#, "HD", "SH"]
+    nn_games = [[True]]#, [False]]
     for in_game in base_games:
         for nn_game in nn_games:
             nn = "nn" if nn_game[0] else "no_nn"
             objective = def_objective(in_game, nn_game)
             study = optuna.create_study(study_name=f'{in_game}_{nn}_lr_tuning', storage=storage, direction='maximize')
-            study.optimize(objective, n_trials=500)
+            study.optimize(objective, n_trials=50)
 
             # Extract the results you want
             results = [{'trial': trial.number, 'value': trial.value, 'params': trial.params} for trial in study.trials]
