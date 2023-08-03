@@ -543,6 +543,7 @@ class NonMfosMetaGames:
         self.p2 = p2
         self.game = game
         self.ccdr = ccdr
+        self.adam = True
         
         global def_Ls 
         def_Ls = def_Ls_NN if nn_game else def_Ls_threshold_game
@@ -573,12 +574,30 @@ class NonMfosMetaGames:
 
         self.std = 1
         if lr is not None:
-            if len(lr) == 2:
-                self.lr = lr[0]
-                self.lr_2 = lr[1]
+            # first testing if lr is a number or a list
+            if isinstance(lr, list):
+                if len(lr) == 2:
+                    self.lr = lr[0]
+                    self.lr_2 = lr[1]
             else:
                 self.lr = lr
+                self.lr_2 = lr
+
         self.d = d[0]
+
+        if self.adam:
+            self.m_1 = torch.zeros((self.b, self.d), requires_grad=False).to(device)
+            self.v_1 = torch.zeros((self.b, self.d), requires_grad=False).to(device)
+            self.beta1_1 = 0.9
+            self.beta2_1 = 0.999
+            self.eps_1 = 1e-8
+            self.t_1 = 0
+            self.m_2 = torch.zeros((self.b, self.d), requires_grad=False).to(device)
+            self.v_2 = torch.zeros((self.b, self.d), requires_grad=False).to(device)
+            self.beta1_2 = 0.9
+            self.beta2_2 = 0.999
+            self.eps_2 = 1e-8
+            self.t_2 = 0
         
         if nn_game and self.diff_game: self.d = 3565 if self.iterated else 3401 # 40, 7
 
@@ -604,12 +623,52 @@ class NonMfosMetaGames:
             self.p1_th_ba = self.init_th_ba.detach() * torch.ones((self.b, self.d), requires_grad=True).to(device)
         if self.p2 == "MAMAML":
             self.p2_th_ba = self.init_th_ba.detach() * torch.ones((self.b, self.d), requires_grad=True).to(device)
-
+        
+        if self.adam:
+            self.m_1 = torch.zeros((self.b, self.d), requires_grad=False).to(device)
+            self.v_1 = torch.zeros((self.b, self.d), requires_grad=False).to(device)
+            self.beta1_1 = 0.9
+            self.beta2_1 = 0.999
+            self.eps_1 = 1e-8
+            self.t_1 = 0
+            self.m_2 = torch.zeros((self.b, self.d), requires_grad=False).to(device)
+            self.v_2 = torch.zeros((self.b, self.d), requires_grad=False).to(device)
+            self.beta1_2 = 0.9
+            self.beta2_2 = 0.999
+            self.eps_2 = 1e-8
+            self.t_2 = 0
+        
         state, _, _, M = self.step()
         if info:
             return state, M
 
         return None
+    
+    def update(self, p1or2, grad):
+        if p1or2 == 1:
+            with torch.no_grad():
+                if self.adam:
+                    self.t_1 += 1
+                    self.m_1 = self.beta1_1 * self.m_1 + (1 - self.beta1_1) * grad
+                    self.v_1 = self.beta2_1 * self.v_1 + (1 - self.beta2_1) * (grad ** 2)
+                    m_hat = self.m_1 / (1 - self.beta1_1 ** self.t_1) # bias correction
+                    v_hat = self.v_1 / (1 - self.beta2_1 ** self.t_1)
+                    self.p1_th_ba -= self.lr * m_hat / (torch.sqrt(v_hat) + self.eps_1) 
+                else: 
+                    self.p1_th_ba -= grad * self.lr
+        elif p1or2 == 2:
+            with torch.no_grad():
+                if self.adam:
+                    self.t_2 += 1
+                    self.m_2 = self.beta1_2 * self.m_2 + (1 - self.beta1_2) * grad
+                    self.v_2 = self.beta2_2 * self.v_2 + (1 - self.beta2_2) * (grad ** 2)
+                    m_hat = self.m_2 / (1 - self.beta1_2 ** self.t_2)
+                    v_hat = self.v_2 / (1 - self.beta2_2 ** self.t_2)
+                    self.p2_th_ba -= m_hat / (torch.sqrt(v_hat) + self.eps_2) * self.lr
+                else:
+                    self.p2_th_ba -= grad * self.lr
+        else:
+            raise NotImplementedError
 
     def step(self, info=False):
         last_p1_th_ba = self.p1_th_ba.clone()
@@ -619,7 +678,7 @@ class NonMfosMetaGames:
         th_CC2 = [self.p2_th_ba, self.p2_th_ba]
         th_DR1 = [self.p2_th_ba, torch.randn_like(self.p1_th_ba)]
         th_DR2 = [torch.randn_like(self.p2_th_ba), self.p1_th_ba]
-
+        
         l1_reg, l2_reg, M = self.game_batched(th_ba) # l2 is for p1 aka p1_th_ba, l1 is for p2 aka p2_th_ba
         
         if self.ccdr: 
@@ -635,15 +694,13 @@ class NonMfosMetaGames:
         # UPDATE P1
         if self.p1 == "NL" or self.p1 == "MAMAML":
             grad = get_gradient(l2.sum(), self.p1_th_ba)
-            with torch.no_grad():
-                self.p1_th_ba -= grad * self.lr
+            self.update(1, grad)
         elif self.p1 == "LOLA":
             losses = [l1, l2]
             grad_L = [[get_gradient(losses[j].sum(), th_ba[i]) for j in range(2)] for i in range(2)]
             term = (grad_L[0][0] * grad_L[0][1]).sum()
             grad = grad_L[1][1] - self.lr_2 * get_gradient(term, th_ba[1])
-            with torch.no_grad():
-                self.p1_th_ba -= grad * self.lr
+            self.update(1, grad)
         elif self.p1 == "STATIC":
             pass
         else:
@@ -652,15 +709,13 @@ class NonMfosMetaGames:
         # UPDATE P2
         if self.p2 == "NL" or self.p2 == "MAMAML":
             grad = get_gradient(l1.sum(), self.p2_th_ba)
-            with torch.no_grad():
-                self.p2_th_ba -= grad * self.lr
+            self.update(2, grad)
         elif self.p2 == "LOLA":
             losses = [l1, l2]
             grad_L = [[get_gradient(losses[j].sum(), th_ba[i]) for j in range(2)] for i in range(2)] 
             term = (grad_L[1][0] * grad_L[1][1]).sum()
             grad = grad_L[0][0] - self.lr_2 * get_gradient(term, th_ba[0])
-            with torch.no_grad():
-                self.p2_th_ba -= grad * self.lr
+            self.update(2, grad)
         elif self.p2 == "STATIC":
             pass
         else:

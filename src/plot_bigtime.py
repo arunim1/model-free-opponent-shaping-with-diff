@@ -210,7 +210,7 @@ def plot_p_act_vs_ep(p1, p2, all_params, game, filename, ax=None, timestep=None)
         plt.close()
 
 
-def plot_esv(p1, p2, all_Ms, game, filename, ax=None, timestep=None):  
+def plot_esv(p1, p2, all_Ms, game, filename, ax=None, timestep=None, M_mean=None):  
     '''
     Plots the expected state visitation vs. training episode over an example run (first of the batch). 
     '''
@@ -259,6 +259,9 @@ def plot_esv(p1, p2, all_Ms, game, filename, ax=None, timestep=None):
     ax.legend()
 
     ax.set_title(f'{p1} vs. {p2}: {game} Expected State Visitation vs. Training Episode')
+    # if M_mean is not None, set a subtitle that shows the mean of the M matrices
+    if M_mean is not None:
+        ax.set_title(f'{p1} vs. {p2}: {game} Expected State Visitation vs. Training Episode\nOverall Average ESV: {M_mean}')
     if timestep is not None:
         ax.set_title(f'Timestep: {timestep}')
     filename = filename.replace("/", "_")
@@ -280,6 +283,7 @@ def plot_non_mfos(data, filename): # FIXED!
         curr_rew_1 = entry["rewards_1"]
         curr_rew_2 = entry["rewards_2"]
         curr_Ms = entry["all_Ms"]
+        curr_M_mean = entry["M_mean"]
         
         if entry["ccdr"]:
             fname = f'{filename}_ccdr'
@@ -292,7 +296,7 @@ def plot_non_mfos(data, filename): # FIXED!
 
         plt.clf()
         plot_rew_vs_ep(p1=curr_p1, p2=curr_p2, game=curr_game, values_1=curr_rew_1, values_2=curr_rew_2, filename=fname)
-        plot_esv(p1=curr_p1, p2=curr_p2, all_Ms=curr_Ms, game=curr_game, filename=fname)
+        plot_esv(p1=curr_p1, p2=curr_p2, all_Ms=curr_Ms, game=curr_game, filename=fname, M_mean=curr_M_mean)
 
         if entry["end_params"] is not None and entry["all_params_1"] is not None:
             curr_end_params = entry["end_params"]
@@ -413,20 +417,16 @@ def main(filename, caller=None, opponent=None, game=None, nn_game=True):
 
     if caller=="non_mfos":
         plot_non_mfos(data, filename_out)
-        quit()
     elif caller=="ppo":
         with open(f'runs/{filename}/quartile_dumps.json', 'r') as file:
             quarts = json.load(file)
         plot_ppo(data, quarts, filename_out, p1 = "MFOS", p2 = opponent, game = game, nn_game=nn_game)
-        quit()
     elif caller=="self":
         with open(f'runs/{filename}/quartile_dumps.json', 'r') as file:
             quarts = json.load(file)
         plot_self(data, quarts, filename_out, game=game, nn_game=nn_game)
-        quit()
-
-    print("Invalid caller")
-    quit()
+    else:
+        print("Invalid caller")
 
 # arge = argparse.ArgumentParser()
 # arge.add_argument("--filename", type=str, default="self_IPD_test2")
@@ -441,5 +441,5 @@ if __name__ == "__main__":
     # opponent = args.opponent
     # caller = args.caller
     # main(filename, caller)
-
+    main("non_mfos_adam_test", caller="non_mfos")
     quit()
