@@ -360,7 +360,7 @@ def plot_self(data, quarts, filename, game, nn_game=True):
     fig4.savefig(f'images/{filename}/qs_{p1}vs{p2}_{game}_esv.png') 
 
 
-def plot_ppo(data, quarts, filename, p1, p2, game, nn_game=True):
+def plot_ppo(data, quarts, filneame, p1, p2, game, nn_game=True):
     prob_or_thresh = "Thresh" if game.find("diff") != -1 else "Prob"
     act = "Cooperate" if game.find("PD") != -1 else "Heads" if game.find("MP") != -1 else "Swerve" if game.find("HD") != -1 else "Stag"
     # plotting the reward, opp_rew vs. time

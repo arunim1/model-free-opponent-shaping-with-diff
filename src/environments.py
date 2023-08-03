@@ -543,10 +543,11 @@ class NonMfosMetaGames:
         self.p2 = p2
         self.game = game
         self.ccdr = ccdr
+        self.nn_game = nn_game
         self.adam = True
         
         global def_Ls 
-        def_Ls = def_Ls_NN if nn_game else def_Ls_threshold_game
+        def_Ls = def_Ls_NN if self.nn_game else def_Ls_threshold_game
 
         self.diff_game = True if game.find("diff") != -1 or game.find("Diff") != -1 else False
         self.iterated = True if game.find("I") != -1 else False
@@ -599,7 +600,7 @@ class NonMfosMetaGames:
             self.eps_2 = 1e-8
             self.t_2 = 0
         
-        if nn_game and self.diff_game: self.d = 3565 if self.iterated else 3401 # 40, 7
+        if self.nn_game and self.diff_game: self.d = 3565 if self.iterated else 3401 # 40, 7
 
         self.init_th_ba = None
         if self.p1 == "MAMAML" or self.p2 == "MAMAML":
@@ -615,9 +616,13 @@ class NonMfosMetaGames:
     def reset(self, info=False):
         # self.p1_th_ba = torch.nn.init.normal_(torch.empty((self.b, self.d), requires_grad=True), std=self.std).to(device)
         # self.p2_th_ba = torch.nn.init.normal_(torch.empty((self.b, self.d), requires_grad=True), std=self.std).to(device)
-        # using xavier_normal_
-        self.p1_th_ba = torch.nn.init.xavier_normal_(torch.empty((self.b, self.d), requires_grad=True)).to(device)
-        self.p2_th_ba = torch.nn.init.xavier_normal_(torch.empty((self.b, self.d), requires_grad=True)).to(device)
+        # using xavier_normal_ for nn games
+        if self.nn_game and self.diff_game: 
+            self.p1_th_ba = torch.nn.init.xavier_normal_(torch.empty((self.b, self.d), requires_grad=True)).to(device)
+            self.p2_th_ba = torch.nn.init.xavier_normal_(torch.empty((self.b, self.d), requires_grad=True)).to(device)
+        else:
+            self.p1_th_ba = torch.nn.init.normal_(torch.empty((self.b, self.d), requires_grad=True), std=self.std).to(device)
+            self.p2_th_ba = torch.nn.init.normal_(torch.empty((self.b, self.d), requires_grad=True), std=self.std).to(device)
 
         if self.p1 == "MAMAML":
             self.p1_th_ba = self.init_th_ba.detach() * torch.ones((self.b, self.d), requires_grad=True).to(device)
@@ -674,14 +679,18 @@ class NonMfosMetaGames:
         last_p1_th_ba = self.p1_th_ba.clone()
         last_p2_th_ba = self.p2_th_ba.clone()
         th_ba = [self.p2_th_ba, self.p1_th_ba]
-        th_CC1 = [self.p1_th_ba, self.p1_th_ba]
-        th_CC2 = [self.p2_th_ba, self.p2_th_ba]
-        th_DR1 = [self.p2_th_ba, torch.randn_like(self.p1_th_ba)]
-        th_DR2 = [torch.randn_like(self.p2_th_ba), self.p1_th_ba]
         
         l1_reg, l2_reg, M = self.game_batched(th_ba) # l2 is for p1 aka p1_th_ba, l1 is for p2 aka p2_th_ba
         
         if self.ccdr: 
+            th_CC1 = [self.p1_th_ba, self.p1_th_ba]
+            th_CC2 = [self.p2_th_ba, self.p2_th_ba]
+            if self.nn_game and self.diff_game:
+                th_DR1 = [self.p2_th_ba, torch.nn.init.xavier_normal_(torch.empty_like(self.p1_th_ba))]  
+                th_DR2 = [torch.nn.init.xavier_normal_(torch.empty_like(self.p2_th_ba)), self.p1_th_ba]
+            else:
+                th_DR1 = [self.p2_th_ba, torch.nn.init.normal_(torch.empty_like(self.p1_th_ba), std=self.std)]  
+                th_DR2 = [torch.nn.init.normal_(torch.empty_like(self.p2_th_ba), std=self.std), self.p1_th_ba]
             _, l2_CC1, _ = self.game_batched(th_CC1)
             l1_CC2, _, _ = self.game_batched(th_CC2)
             l1_DR1, _, _ = self.game_batched(th_DR1)
