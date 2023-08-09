@@ -138,8 +138,8 @@ def worker(args_in):
 if __name__ == "__main__":
     torch.cuda.empty_cache()
 
-    batch_size = 512 # 4096
-    num_steps = 400 # 100
+    batch_size = 128 # 4096
+    num_steps = 100 # 100
     name = args.exp_name
 
     print(f"RUNNING NAME: {name}")

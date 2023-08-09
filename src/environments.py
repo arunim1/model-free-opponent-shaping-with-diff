@@ -9,6 +9,18 @@ torch.set_default_dtype(torch.float32)
 torch.set_default_tensor_type(torch.FloatTensor)
 torch.set_default_device(device) # type: ignore
 
+global n_params_5 
+global n_params_1
+global n_neurons_in 
+
+n_neurons_in = 8
+n_params_5 = 2*(n_neurons_in**2) + 9*n_neurons_in + 5
+n_params_1 = 2*(n_neurons_in**2) + 5*n_neurons_in + 1
+
+global nn_upper_bound
+
+nn_upper_bound = 0.2
+
 def asymmetrize(p_m_1, p_m_2, eps=1e-3): 
     # [(2,2), (0,3+e), (3,0), (1,1+e)], i.e. changing player 2's incentive to defect
     p_m_1 = p_m_1.clone() # needed because of in-place operations + device apparently
@@ -57,20 +69,20 @@ def diff_nn(th_0, th_1, upper_bound=1.0, iterated=False):
         # Return the positive solution as the number of neurons should be positive
         return math.floor(max(neuron1, neuron2))
 
-    n_neurons = calculate_neurons(th[0].shape[1])
+    n_neurons = calculate_neurons(th_0.shape[1])
 
     W1_1, W1_2 = th_0[:, 0:n_neurons].unsqueeze(1).unsqueeze(-1), th_1[:, 0:n_neurons].unsqueeze(1).unsqueeze(-1)  # has size (bs, 1, n_neurons, 1)
     b1_1, b1_2 = th_0[:, n_neurons:2*n_neurons].unsqueeze(1).unsqueeze(-1), th_1[:, n_neurons:2*n_neurons].unsqueeze(1).unsqueeze(-1)  # has size (bs, 1, n_neurons, 1)
-    W2_1, W2_2 = th_0[:, 2*n_neurons:2*n_neurons + n_neurons**2].reshape((bs, n_neurons, n_neurons)), th_1[:, 2*n_neurons:2*n_neurons + n_neurons**2].reshape((bs, n_neurons, n_neurons)) # has length n_neurons**2
-    b2_1, b2_2 = th_0[:, 2*n_neurons + n_neurons**2:2*n_neurons + n_neurons**2 + n_neurons].unsqueeze(1), th_1[:, 2*n_neurons + n_neurons**2:2*n_neurons + n_neurons**2 + n_neurons].unsqueeze(1) # has length n_neurons
-    W3_1, W3_2 = th_0[:, 2*n_neurons + n_neurons**2 + n_neurons:2*n_neurons + n_neurons**2 + 2*n_neurons**2 + n_neurons].reshape((bs, n_neurons, n_neurons)), th_1[:, 2*n_neurons + n_neurons**2 + n_neurons:2*n_neurons + n_neurons**2 + 2*n_neurons**2 + n_neurons].reshape((bs, n_neurons, n_neurons)) # has length n_neurons**2
-    b3_1, b3_2 = th_0[:, 2*n_neurons + n_neurons**2 + 2*n_neurons**2 + n_neurons:2*n_neurons + n_neurons**2 + 2*n_neurons**2 + 2*n_neurons].unsqueeze(1), th_1[:, 2*n_neurons + n_neurons**2 + 2*n_neurons**2 + n_neurons:2*n_neurons + n_neurons**2 + 2*n_neurons**2 + 2*n_neurons].unsqueeze(1) # has length n_neurons
+    W2_1, W2_2 = th_0[:, 2*n_neurons:2*n_neurons + n_neurons**2].reshape((bs, n_neurons, n_neurons)), th_1[:, 2*n_neurons:2*n_neurons + n_neurons**2].reshape((bs, n_neurons, n_neurons)) 
+    b2_1, b2_2 = th_0[:, 2*n_neurons + n_neurons**2:3*n_neurons + n_neurons**2], th_1[:, 2*n_neurons + n_neurons**2:3*n_neurons + n_neurons**2] 
+    W3_1, W3_2 = th_0[:, 3*n_neurons + n_neurons**2:3*n_neurons + 2*n_neurons**2].reshape((bs, n_neurons, n_neurons)), th_1[:, 3*n_neurons + n_neurons**2:3*n_neurons + 2*n_neurons**2].reshape((bs, n_neurons, n_neurons)) 
+    b3_1, b3_2 = th_0[:, 3*n_neurons + 2*n_neurons**2:4*n_neurons + 2*n_neurons**2], th_1[:, 3*n_neurons + 2*n_neurons**2:4*n_neurons + 2*n_neurons**2] 
     if iterated: 
-        W4_1, W4_2 = th_0[:, 2*n_neurons + n_neurons**2 + 2*n_neurons**2 + 2*n_neurons:2*n_neurons + n_neurons**2 + 2*n_neurons**2 + 2*n_neurons + 5*n_neurons].reshape((bs, n_neurons, 5*n_neurons)), th_1[:, 2*n_neurons + n_neurons**2 + 2*n_neurons**2 + 2*n_neurons:2*n_neurons + n_neurons**2 + 2*n_neurons**2 + 2*n_neurons + 5*n_neurons].reshape((bs, n_neurons, 5*n_neurons)) # has length 5*n_neurons**2
-        b4_1, b4_2 = th_0[:, 2*n_neurons + n_neurons**2 + 2*n_neurons**2 + 2*n_neurons + 5*n_neurons:2*n_neurons + n_neurons**2 + 2*n_neurons**2 + 2*n_neurons + 5*n_neurons + 5].unsqueeze(1), th_1[:, 2*n_neurons + n_neurons**2 + 2*n_neurons**2 + 2*n_neurons + 5*n_neurons:2*n_neurons + n_neurons**2 + 2*n_neurons**2 + 2*n_neurons + 5*n_neurons + 5].unsqueeze(1) # has length 5
+        W4_1, W4_2 = th_0[:, 4*n_neurons + 2*n_neurons**2:9*n_neurons + 2*n_neurons**2].reshape((bs, n_neurons, 5)), th_1[:, 4*n_neurons + 2*n_neurons**2:9*n_neurons + 2*n_neurons**2].reshape((bs, n_neurons, 5)) 
+        b4_1, b4_2 = th_0[:, 9*n_neurons + 2*n_neurons**2:9*n_neurons + 2*n_neurons**2 + 5], th_1[:, 9*n_neurons + 2*n_neurons**2:9*n_neurons + 2*n_neurons**2 + 5] 
     else:
-        W4_1, W4_2 = th_0[:, 2*n_neurons + n_neurons**2 + 2*n_neurons**2 + 2*n_neurons:2*n_neurons + n_neurons**2 + 2*n_neurons**2 + 2*n_neurons + n_neurons].reshape((bs, n_neurons, n_neurons)), th_1[:, 2*n_neurons + n_neurons**2 + 2*n_neurons**2 + 2*n_neurons:2*n_neurons + n_neurons**2 + 2*n_neurons**2 + 2*n_neurons + n_neurons].reshape((bs, n_neurons, n_neurons)) # has length n_neurons**2
-        b4_1, b4_2 = th_0[:, 2*n_neurons + n_neurons**2 + 2*n_neurons**2 + 2*n_neurons + n_neurons:2*n_neurons + n_neurons**2 + 2*n_neurons**2 + 2*n_neurons + n_neurons + n_neurons].unsqueeze(1), th_1[:, 2*n_neurons + n_neurons**2 + 2*n_neurons**2 + 2*n_neurons + n_neurons:2*n_neurons + n_neurons**2 + 2*n_neurons**2 + 2*n_neurons + n_neurons + n_neurons].unsqueeze(1) # has length n_neurons
+        W4_1, W4_2 = th_0[:, 4*n_neurons + 2*n_neurons**2:5*n_neurons + 2*n_neurons**2].reshape((bs, n_neurons, 1)), th_1[:, 4*n_neurons + 2*n_neurons**2:5*n_neurons + 2*n_neurons**2].reshape((bs, n_neurons, 1)) 
+        b4_1, b4_2 = th_0[:, 5*n_neurons + 2*n_neurons**2:5*n_neurons + 2*n_neurons**2 + n_neurons], th_1[:, 5*n_neurons + 2*n_neurons**2:5*n_neurons + 2*n_neurons**2 + n_neurons] 
     
     x1_1, x1_2 = torch.relu(diff_inputs_repeated * W1_1 + b1_1), torch.relu(diff_inputs_repeated * W1_2 + b1_2)  # each has size (bs, 100, 40, 1)
     x1_1_u, x1_2_u = x1_1.squeeze(-1), x1_2.squeeze(-1)  # each has size (bs, 1, 100, 40)
@@ -97,10 +109,10 @@ def def_Ls_NN(p_m_1, p_m_2, bs, gamma_inner=0.96, iterated=False, diff_game=Fals
     def Ls(th): # th is a list of two tensors, each of shape (bs, params) for iterated games 
         th[0] = th[0].clone().to(device) # really not quite sure why this is necessary but it is. 
         th[1] = th[1].clone().to(device)
-        nn_upper_bound = 0.2
+
 
         if diff_game: 
-            
+
             def calculate_neurons(n_params):
                 # Coefficients for the quadratic equation
                 a = 2
@@ -133,22 +145,22 @@ def def_Ls_NN(p_m_1, p_m_2, bs, gamma_inner=0.96, iterated=False, diff_game=Fals
             
             x1_1, x1_2 = torch.relu(diff1 * W1_1 + b1_1), torch.relu(diff2 * W1_2 + b1_2)
             # second layer
-            W2_1, W2_2 = th[0][:, 2*n_neurons:2*n_neurons + n_neurons*n_neurons].reshape((bs, n_neurons, n_neurons)), th[1][:, 2*n_neurons:2*n_neurons + n_neurons*n_neurons].reshape((bs, n_neurons, n_neurons))
-            b2_1, b2_2 = th[0][:, 2*n_neurons + n_neurons*n_neurons:2*n_neurons + n_neurons*n_neurons + n_neurons], th[1][:, 2*n_neurons + n_neurons*n_neurons:2*n_neurons + n_neurons*n_neurons + n_neurons] # has length n_neurons
+            W2_1, W2_2 = th[0][:, 2*n_neurons:2*n_neurons + n_neurons**2].reshape((bs, n_neurons, n_neurons)), th[1][:, 2*n_neurons:2*n_neurons + n_neurons**2].reshape((bs, n_neurons, n_neurons))
+            b2_1, b2_2 = th[0][:, 2*n_neurons + n_neurons**2:3*n_neurons + n_neurons**2], th[1][:, 2*n_neurons + n_neurons**2:3*n_neurons + n_neurons**2] # has length n_neurons
             b2_1_u, b2_2_u = b2_1.unsqueeze(1), b2_2.unsqueeze(1)
             x1_1, x1_2 = x1_1.unsqueeze(1), x1_2.unsqueeze(1)
             x2_1, x2_2 = torch.relu(torch.bmm(x1_1, W2_1) + b2_1_u), torch.relu(torch.bmm(x1_2, W2_2) + b2_2_u)
 
             # third layer, also n_neurons x n_neurons
-            W3_1, W3_2 = th[0][:, 2*n_neurons + n_neurons*n_neurons + n_neurons:2*n_neurons + 2*n_neurons*n_neurons + n_neurons].reshape((bs, n_neurons, n_neurons)), th[1][:, 2*n_neurons + n_neurons*n_neurons + n_neurons:2*n_neurons + 2*n_neurons*n_neurons + n_neurons].reshape((bs, n_neurons, n_neurons))
-            b3_1, b3_2 = th[0][:, 2*n_neurons + 2*n_neurons*n_neurons + n_neurons:2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons], th[1][:, 2*n_neurons + 2*n_neurons*n_neurons + n_neurons:2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons] # has length n_neurons
+            W3_1, W3_2 = th[0][:, 3*n_neurons + n_neurons**2:3*n_neurons + 2*n_neurons**2].reshape((bs, n_neurons, n_neurons)), th[1][:, 3*n_neurons + n_neurons**2:3*n_neurons + 2*n_neurons**2].reshape((bs, n_neurons, n_neurons))
+            b3_1, b3_2 = th[0][:, 3*n_neurons + 2*n_neurons**2:4*n_neurons + 2*n_neurons**2], th[1][:, 3*n_neurons + 2*n_neurons**2:4*n_neurons + 2*n_neurons**2] # has length n_neurons
             b3_1_u, b3_2_u = b3_1.unsqueeze(1), b3_2.unsqueeze(1)
             x3_1, x3_2 = torch.relu(torch.bmm(x2_1, W3_1) + b3_1_u), torch.relu(torch.bmm(x2_2, W3_2) + b3_2_u)
             
             if iterated: 
                 # fourth layer, final, n_neurons x 5
-                W4_1, W4_2 = th[0][:, 2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons:2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons + n_neurons*5].reshape((bs, n_neurons, 5)), th[1][:, 2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons:2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons + n_neurons*5].reshape((bs, n_neurons, 5))
-                b4_1, b4_2 = th[0][:, 2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons + n_neurons*5:2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons + n_neurons*5 + 5], th[1][:, 2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons + n_neurons*5:2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons + n_neurons*5 + 5] # has length 5
+                W4_1, W4_2 = th[0][:, 4*n_neurons + 2*n_neurons**2:9*n_neurons + 2*n_neurons**2].reshape((bs, n_neurons, 5)), th[1][:, 4*n_neurons + 2*n_neurons**2:9*n_neurons + 2*n_neurons**2].reshape((bs, n_neurons, 5))
+                b4_1, b4_2 = th[0][:, 9*n_neurons + 2*n_neurons**2:9*n_neurons + 2*n_neurons**2 + 5], th[1][:, 9*n_neurons + 2*n_neurons**2:9*n_neurons + 2*n_neurons**2 + 5] # has length 5
                 b4_1_u, b4_2_u = b4_1.unsqueeze(1), b4_2.unsqueeze(1)
                 x4_1, x4_2 = torch.bmm(x3_1, W4_1) + b4_1_u, torch.bmm(x3_2, W4_2) + b4_2_u
                 x4_1, x4_2 = x4_1.squeeze(1), x4_2.squeeze(1) # outputs of NN
@@ -158,10 +170,10 @@ def def_Ls_NN(p_m_1, p_m_2, bs, gamma_inner=0.96, iterated=False, diff_game=Fals
                 p_2 = torch.reshape(torch.sigmoid(x4_1[:, 1:5]), (bs, 4, 1))
             else:
                 # fourth layer, final, n_neurons x 1
-                W4_1 = th[0][:, 2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons:2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons + n_neurons].reshape((bs, n_neurons, 1))
-                W4_2 = th[1][:, 2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons:2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons + n_neurons].reshape((bs, n_neurons, 1))
-                b4_1 = th[0][:, 2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons + n_neurons:2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons + n_neurons + 1]
-                b4_2 = th[1][:, 2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons + n_neurons:2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons + n_neurons + 1]
+                W4_1 = th[0][:, 4*n_neurons + 2*n_neurons**2:5*n_neurons + 2*n_neurons**2].reshape((bs, n_neurons, 1))
+                W4_2 = th[1][:, 4*n_neurons + 2*n_neurons**2:5*n_neurons + 2*n_neurons**2].reshape((bs, n_neurons, 1))
+                b4_1 = th[0][:, 5*n_neurons + 2*n_neurons**2:5*n_neurons + 2*n_neurons**2 + 1]
+                b4_2 = th[1][:, 5*n_neurons + 2*n_neurons**2:5*n_neurons + 2*n_neurons**2 + 1]
                 b4_1_u, b4_2_u = b4_1.unsqueeze(1), b4_2.unsqueeze(1)
                 x4_1, x4_2 = torch.bmm(x3_1, W4_1) + b4_1_u, torch.bmm(x3_2, W4_2) + b4_2_u
                 x4_1, x4_2 = x4_1.squeeze(1), x4_2.squeeze(1) # outputs of NN
@@ -408,8 +420,7 @@ class MetaGames:
         self.std = 1
         self.d = d[0]
 
-        if self.nn_game and self.diff_game: self.d = 3565 if self.iterated else 3401 # 40, 7
-        if self.nn_game and self.diff_game: self.d = 40 if self.iterated else 7
+        if self.nn_game and self.diff_game: self.d = n_params_5 if self.iterated else n_params_1
 
         self.opponent = opponent
         if self.opponent == "MAMAML":
@@ -476,6 +487,15 @@ class MetaGames:
         else:
             return torch.sigmoid(torch.cat((outer_th_ba, last_inner_th_ba), dim=-1)).detach(), -l2.detach(), -l1.detach(), M
 
+    def fwd_step(self, p1_th=None, p2_th=None): #TODO check that this makes sense for MFOS and self
+        # just gets the rewards and plays the game, doesn't update (clone and detach evertyhing just in case)
+        if p1_th is None: p1_th = self.p1_th_ba.detach().clone()
+        if p2_th is None: p2_th = self.p2_th_ba.detach().clone()
+        th_ba = [p1_th, p2_th]
+        l1, l2, M = self.game_batched(th_ba) # here, l2 corresponds to p1_th_ba, l1 corresponds to p2_th_ba
+
+        return torch.sigmoid(torch.cat([self.p1_th_ba.detach(), self.p2_th_ba.detach()])).detach(), -l2.detach(), -l1.detach(), M
+
 
 class SymmetricMetaGames:
     def __init__(self, b, game="IPD", nn_game=False):
@@ -486,6 +506,7 @@ class SymmetricMetaGames:
 
         self.diff_game = True if game.find("diff") != -1 or game.find("Diff") != -1 else False
         self.iterated = True if game.find("I") != -1 else False
+        self.nn_game = nn_game
 
         global def_Ls 
         def_Ls = def_Ls_NN if nn_game else def_Ls_threshold_game
@@ -508,7 +529,7 @@ class SymmetricMetaGames:
         self.std = 1
         self.d = d[0]
 
-        if nn_game and self.diff_game: self.d = 3565 if self.iterated else 3401 # 40, 7
+        if self.nn_game and self.diff_game: self.d = n_params_5 if self.iterated else n_params_1
 
 
     def reset(self, info=False):
@@ -533,6 +554,15 @@ class SymmetricMetaGames:
             return [state_0, state_1], [-l1 * (1 - self.gamma_inner), -l2 * (1 - self.gamma_inner)], M
         else:
             return [state_0, state_1], [-l1.detach(), -l2.detach()], M
+        
+    def fwd_step(self, p1_th=None, p2_th=None): #TODO check that this makes sense for MFOS and self
+        # just gets the rewards and plays the game, doesn't update (clone and detach evertyhing just in case)
+        if p1_th is None: p1_th = self.p1_th_ba.detach().clone()
+        if p2_th is None: p2_th = self.p2_th_ba.detach().clone()
+        th_ba = [p1_th, p2_th]
+        l1, l2, M = self.game_batched(th_ba) # here, l2 corresponds to p1_th_ba, l1 corresponds to p2_th_ba
+
+        return torch.sigmoid(torch.cat([self.p1_th_ba.detach(), self.p2_th_ba.detach()])).detach(), -l2.detach(), -l1.detach(), M
 
 
 class NonMfosMetaGames:
@@ -607,10 +637,7 @@ class NonMfosMetaGames:
             self.eps_2 = 1e-8
             self.t_2 = 0
         
-        n_neurons = 8 
-        n_params_5 = 2*(n_neurons**2) + 9*n_neurons + 5
-        n_params_1 = 2*(n_neurons**2) + 5*n_neurons + 1
-        if self.nn_game and self.diff_game: self.d = n_params_5 if self.iterated else n_params_1 # (3565, 3401), (40, 7)
+        if self.nn_game and self.diff_game: self.d = n_params_5 if self.iterated else n_params_1
 
         self.init_th_ba = None
         if self.p1 == "MAMAML" or self.p2 == "MAMAML":
