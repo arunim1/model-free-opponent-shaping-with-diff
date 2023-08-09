@@ -20,11 +20,12 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--exp-name", type=str, default="")
 args = parser.parse_args()
 
+
 def worker(args_in):
-    game, nn_game, batch_size, num_steps, p1, p2, lr, asym, ccdr, device = args_in
+    game, nn_game, batch_size, num_steps, p1, p2, lr, asym, ccdr, adam, device = args_in
 
     curr_nn_game = nn_game and game.find("diff") != -1  
-    env = NonMfosMetaGames(batch_size, p1=p1, p2=p2, game=game, lr=lr, asym=asym, nn_game=curr_nn_game, ccdr=ccdr)
+    env = NonMfosMetaGames(batch_size, p1=p1, p2=p2, game=game, lr=lr, asym=asym, nn_game=curr_nn_game, ccdr=ccdr, adam=adam)
     env.reset()
     running_rew_0 = torch.zeros(batch_size).to(device)
     running_rew_1 = torch.zeros(batch_size).to(device)
@@ -33,6 +34,8 @@ def worker(args_in):
     rewards_1 = []
     rewards_2 = []
     last_params = [0]
+    last_r0 = 0
+    last_r1 = 0
     M_mean = torch.zeros(4).to(device)
 
     for i in tqdm(range(num_steps)):
@@ -53,7 +56,35 @@ def worker(args_in):
         rewards_1.append(r0.mean(dim=0).squeeze().tolist())
         rewards_2.append(r1.mean(dim=0).squeeze().tolist())
 
-        if i == num_steps - 1: last_params[0] = params
+        if i == num_steps - 1: last_params[0], last_r0, last_r1 = params, r0, r1
+
+    stability_test = False
+    if stability_test:
+        n_of_perturbations = 10000
+        epsilon = lr
+        num_improvements_1 = 0
+        num_improvements_2 = 0
+        for _ in range(n_of_perturbations):
+            # altering params randomly: 
+            split_params = torch.split(last_params[0], batch_size, dim=0)
+            end_params_1 = split_params[0] # just p1's params
+            end_params_2 = split_params[1] # just p2's params
+
+            rand_tensor = torch.randn(end_params_1.shape) - 0.5
+            norm_rand_tensor = rand_tensor / (rand_tensor.norm(dim=1, keepdim=True)+ 1e-8)
+            params_mod_1 = end_params_1 + epsilon*norm_rand_tensor
+            rand_tensor = torch.randn(end_params_2.shape) - 0.5
+            norm_rand_tensor = rand_tensor / (rand_tensor.norm(dim=1, keepdim=True)+ 1e-8)  
+            params_mod_2 = end_params_2 + epsilon*norm_rand_tensor
+            _, r0, _, _ = env.fwd_step(params_mod_1, end_params_2)
+            _, _, r1, _ = env.fwd_step(end_params_1, params_mod_2)
+            if r0.mean().item() > last_r0.mean().item():
+                num_improvements_1 += 1
+            if r1.mean().item() > last_r1.mean().item():
+                num_improvements_2 += 1
+
+        print(f"stability_1 = {num_improvements_1 / n_of_perturbations}")
+        print(f"stability_2 = {num_improvements_2 / n_of_perturbations}")
     
     # Collect all runs into a single tensor
     # Reshape your data to a matrix of shape (5, 500*4)
@@ -136,28 +167,29 @@ if __name__ == "__main__":
     lrs = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2., 5., 10.]
     asymmetries = [0.0, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0]
     ccdrs = [False, True]
-    nn_games = [False, True]
+    nn_games = [True, False]
 
     # lrs = [(1.62885553603262, 2.220943843335561)]
     lrs =[0.1, 0.2, 0.5, 1, 2, 5, 10]
     lrs = np.logspace(-2, 1, num=20)
     asymmetries = [None]
     # ccdrs = [False]
-    # nn_games = [False]
+    nn_games = [True]
     
     # Alternative method: use multiprocessing
     multiprocessing.set_start_method('spawn')
 
     tasks = []
-    for game in all_games: 
+    for game in diff_games: 
         if game in diff_games: nn_games_2 = nn_games
-        else: nn_games_2 = [False]
+        else: nn_games_2 = [False] 
         for nn_game in nn_games_2: 
             for ccdr in ccdrs: 
                 for asym in asymmetries: 
                     for p1, p2 in pairs:
-                        for lr in lrs: 
-                            tasks.append((game, nn_game, batch_size, num_steps, p1, p2, lr, asym, ccdr, device))
+                        for lr in lrs:
+                            adam = True 
+                            tasks.append((game, nn_game, batch_size, num_steps, p1, p2, lr, asym, ccdr, adam, device))
 
     with Pool(6) as pool:
         results = pool.map(worker, tasks)
@@ -178,7 +210,7 @@ if __name__ == "__main__":
     else:
         plot_all(name, caller="non_mfos")
 
-    # this doesnt end up running because the above function calls also end up doing "quit()"
+
     # command = ["gcloud", "compute", "instances", "stop", "instance-arunim", "--zone=us-east1-b"]
 
     # print("Executing command:", " ".join(command))

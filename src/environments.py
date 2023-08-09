@@ -1,7 +1,7 @@
 import os.path as osp
 import torch
 from torch import nn
-import gc
+import math
 
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu" if torch.backends.mps.is_available() else "cpu") # type: ignore
@@ -18,7 +18,7 @@ def asymmetrize(p_m_1, p_m_2, eps=1e-3):
     return p_m_1, p_m_2
 
 
-def diff_nn(th_0, th_1):
+def diff_nn(th_0, th_1, upper_bound=1.0):
     # output = torch.sum(torch.abs(th_0 - th_1), dim=-1, keepdim=True)
     # output = torch.norm(th_0 - th_1, dim=-1, keepdim=True)
     """
@@ -29,8 +29,10 @@ def diff_nn(th_0, th_1):
 
     bs = th_0.shape[0]
 
+    upper_bound = torch.tensor(upper_bound).to(device)
+
     # Generate an array of inputs within the range [0, 1].
-    diff_inputs = (torch.rand(100) * 1.0).unsqueeze(1).unsqueeze(1).to(device)
+    diff_inputs = (torch.rand(100) * upper_bound).unsqueeze(1).unsqueeze(1).to(device)
 
     # Repeat diff_inputs to make it have shape: (bs, 100, 1, 1)
     diff_inputs_repeated = diff_inputs.repeat(bs, 1, 1, 1)
@@ -93,103 +95,100 @@ def diff_nn(th_0, th_1):
     return diff_output
 
 
-def def_Ls_NN(p_m_1, p_m_2, bs, gamma_inner=0.96, iterated=False, diff_game=False):
-    def Ls(th): # th is a list of two tensors, each of shape (bs, 40) for iterated games 
+def def_Ls_NN(p_m_1, p_m_2, bs, gamma_inner=0.96, iterated=False, diff_game=False): # works for ~arbitrary number of params
+    def Ls(th): # th is a list of two tensors, each of shape (bs, params) for iterated games 
         th[0] = th[0].clone().to(device) # really not quite sure why this is necessary but it is. 
         th[1] = th[1].clone().to(device)
-        if iterated:
-            if diff_game:
-                diff = diff_nn(th[0], th[1]) # has shape (bs, 1)
+        nn_upper_bound = 0.2
 
-                diff1 = diff + 0.1 * torch.rand_like(diff)
-                diff2 = diff + 0.1 * torch.rand_like(diff)
+        if diff_game: 
+            
+            def calculate_neurons(n_params):
+                # Coefficients for the quadratic equation
+                a = 2
+                b = 9 if iterated else 5
+                c = -(n_params - 5) if iterated else -(n_params - 1)
+                
+                # Calculate the discriminant
+                discriminant = b**2 - 4*a*c
+                
+                # If discriminant is negative, then no real solution exists
+                if discriminant < 0:
+                    return None
+                
+                # Calculate the two possible solutions using the quadratic formula
+                neuron1 = (-b + math.sqrt(discriminant)) / (2*a)
+                neuron2 = (-b - math.sqrt(discriminant)) / (2*a)
+                
+                # Return the positive solution as the number of neurons should be positive, and round it down.
+                return math.floor(max(neuron1, neuron2))
 
-                # first layer
-                W1_1, W1_2 = th[0][:, 0:40], th[1][:, 0:40] # has length 40
-                b1_1, b1_2 = th[0][:, 40:80], th[1][:, 40:80] 
+            n_neurons = calculate_neurons(th[0].shape[1])
+            diff = diff_nn(th[0], th[1], upper_bound=nn_upper_bound) # has shape (bs, 1)
+            
+            diff1 = diff + 0.1 * torch.rand_like(diff)
+            diff2 = diff + 0.1 * torch.rand_like(diff) 
 
-                x1_1, x1_2 = torch.relu(diff1 * W1_1 + b1_1), torch.relu(diff2 * W1_2 + b1_2)
-                # second layer
-                W2_1, W2_2 = th[0][:, 80:1680].reshape((bs, 40, 40)), th[1][:, 80:1680].reshape((bs, 40, 40)) 
-                b2_1, b2_2 = th[0][:, 1680:1720], th[1][:, 1680:1720] # has length 40
-                b2_1_u, b2_2_u = b2_1.unsqueeze(1), b2_2.unsqueeze(1)
-                x1_1, x1_2 = x1_1.unsqueeze(1), x1_2.unsqueeze(1)
-                x2_1, x2_2 = torch.relu(torch.bmm(x1_1, W2_1) + b2_1_u), torch.relu(torch.bmm(x1_2, W2_2) + b2_2_u)
-                # x2_1, x2_2 = x2_1.squeeze(1), x2_2.squeeze(1) # outputs of NN
 
-                # third layer, also 40x40
-                W3_1, W3_2 = th[0][:, 1720:3320].reshape((bs, 40, 40)), th[1][:, 1720:3320].reshape((bs, 40, 40))
-                b3_1, b3_2 = th[0][:, 3320:3360], th[1][:, 3320:3360] # has length 40
-                b3_1_u, b3_2_u = b3_1.unsqueeze(1), b3_2.unsqueeze(1)
-                x3_1, x3_2 = torch.relu(torch.bmm(x2_1, W3_1) + b3_1_u), torch.relu(torch.bmm(x2_2, W3_2) + b3_2_u)
+            W1_1, W1_2 = th[0][:, 0:n_neurons], th[1][:, 0:n_neurons] # has length n_neurons
+            b1_1, b1_2 = th[0][:, n_neurons:2*n_neurons], th[1][:, n_neurons:2*n_neurons]
+            
+            x1_1, x1_2 = torch.relu(diff1 * W1_1 + b1_1), torch.relu(diff2 * W1_2 + b1_2)
+            # second layer
+            W2_1, W2_2 = th[0][:, 2*n_neurons:2*n_neurons + n_neurons*n_neurons].reshape((bs, n_neurons, n_neurons)), th[1][:, 2*n_neurons:2*n_neurons + n_neurons*n_neurons].reshape((bs, n_neurons, n_neurons))
+            b2_1, b2_2 = th[0][:, 2*n_neurons + n_neurons*n_neurons:2*n_neurons + n_neurons*n_neurons + n_neurons], th[1][:, 2*n_neurons + n_neurons*n_neurons:2*n_neurons + n_neurons*n_neurons + n_neurons] # has length n_neurons
+            b2_1_u, b2_2_u = b2_1.unsqueeze(1), b2_2.unsqueeze(1)
+            x1_1, x1_2 = x1_1.unsqueeze(1), x1_2.unsqueeze(1)
+            x2_1, x2_2 = torch.relu(torch.bmm(x1_1, W2_1) + b2_1_u), torch.relu(torch.bmm(x1_2, W2_2) + b2_2_u)
 
-                # fourth layer, final, 40x5
-                W4_1, W4_2 = th[0][:, 3360:3560].reshape((bs, 40, 5)), th[1][:, 3360:3560].reshape((bs, 40, 5))
-                b4_1, b4_2 = th[0][:, 3560:3565], th[1][:, 3560:3565] # has length 5
+            # third layer, also n_neurons x n_neurons
+            W3_1, W3_2 = th[0][:, 2*n_neurons + n_neurons*n_neurons + n_neurons:2*n_neurons + 2*n_neurons*n_neurons + n_neurons].reshape((bs, n_neurons, n_neurons)), th[1][:, 2*n_neurons + n_neurons*n_neurons + n_neurons:2*n_neurons + 2*n_neurons*n_neurons + n_neurons].reshape((bs, n_neurons, n_neurons))
+            b3_1, b3_2 = th[0][:, 2*n_neurons + 2*n_neurons*n_neurons + n_neurons:2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons], th[1][:, 2*n_neurons + 2*n_neurons*n_neurons + n_neurons:2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons] # has length n_neurons
+            b3_1_u, b3_2_u = b3_1.unsqueeze(1), b3_2.unsqueeze(1)
+            x3_1, x3_2 = torch.relu(torch.bmm(x2_1, W3_1) + b3_1_u), torch.relu(torch.bmm(x2_2, W3_2) + b3_2_u)
+            
+            if iterated: 
+                # fourth layer, final, n_neurons x 5
+                W4_1, W4_2 = th[0][:, 2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons:2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons + n_neurons*5].reshape((bs, n_neurons, 5)), th[1][:, 2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons:2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons + n_neurons*5].reshape((bs, n_neurons, 5))
+                b4_1, b4_2 = th[0][:, 2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons + n_neurons*5:2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons + n_neurons*5 + 5], th[1][:, 2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons + n_neurons*5:2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons + n_neurons*5 + 5] # has length 5
                 b4_1_u, b4_2_u = b4_1.unsqueeze(1), b4_2.unsqueeze(1)
                 x4_1, x4_2 = torch.bmm(x3_1, W4_1) + b4_1_u, torch.bmm(x3_2, W4_2) + b4_2_u
                 x4_1, x4_2 = x4_1.squeeze(1), x4_2.squeeze(1) # outputs of NN
-                
-                # total params is 3565
+
                 p_1_0, p_2_0 = torch.sigmoid(x4_1[:, 0:1]), torch.sigmoid(x4_2[:, 0:1])
                 p_1 = torch.reshape(torch.sigmoid(x4_1[:, 1:5]), (bs, 4, 1))
-                p_2 = torch.reshape(torch.sigmoid(torch.cat([x4_2[:, 1:2], x4_2[:, 3:4], x4_2[:, 2:3], x4_2[:, 4:5]], dim=-1)), (bs, 4, 1))
+                p_2 = torch.reshape(torch.sigmoid(x4_1[:, 1:5]), (bs, 4, 1))
             else:
+                # fourth layer, final, n_neurons x 1
+                W4_1 = th[0][:, 2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons:2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons + n_neurons].reshape((bs, n_neurons, 1))
+                W4_2 = th[1][:, 2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons:2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons + n_neurons].reshape((bs, n_neurons, 1))
+                b4_1 = th[0][:, 2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons + n_neurons:2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons + n_neurons + 1]
+                b4_2 = th[1][:, 2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons + n_neurons:2*n_neurons + 2*n_neurons*n_neurons + 2*n_neurons + n_neurons + 1]
+                b4_1_u, b4_2_u = b4_1.unsqueeze(1), b4_2.unsqueeze(1)
+                x4_1, x4_2 = torch.bmm(x3_1, W4_1) + b4_1_u, torch.bmm(x3_2, W4_2) + b4_2_u
+                x4_1, x4_2 = x4_1.squeeze(1), x4_2.squeeze(1) # outputs of NN
+
+                p_1, p_2 = torch.sigmoid(x4_1), torch.sigmoid(x4_2)
+        else:
+            if iterated: 
                 p_1_0, p_2_0 = torch.sigmoid(th[0][:, 0:1]), torch.sigmoid(th[1][:, 0:1])
                 p_1 = torch.reshape(torch.sigmoid(th[0][:, 1:5]), (bs, 4, 1))
                 p_2 = torch.reshape(torch.sigmoid(torch.cat([th[1][:, 1:2], th[1][:, 3:4], th[1][:, 2:3], th[1][:, 4:5]], dim=-1)), (bs, 4, 1))
-
-            p = torch.cat([p_1_0 * p_2_0, p_1_0 * (1 - p_2_0), (1 - p_1_0) * p_2_0, (1 - p_1_0) * (1 - p_2_0)], dim=-1)
-            P = torch.cat([p_1 * p_2, p_1 * (1 - p_2), (1 - p_1) * p_2, (1 - p_1) * (1 - p_2)], dim=-1)
-            M = torch.matmul(p.unsqueeze(1), torch.inverse(torch.eye(4).to(device) - gamma_inner * P))  
-            L_1 = -torch.matmul(M, torch.reshape(p_m_1, (bs, 4, 1))) # player 2's loss, since p2's params are th[0]
-            L_2 = -torch.matmul(M, torch.reshape(p_m_2, (bs, 4, 1))) # player 1's loss, since p1's params are th[1]
-            return [L_1.squeeze(-1), L_2.squeeze(-1), M] 
-        
-        else:
-            if diff_game:
-                diff = diff_nn(th[0], th[1]) # has shape (bs, 1)
-
-                diff1 = diff + 0.1 * torch.rand_like(diff)
-                diff2 = diff + 0.1 * torch.rand_like(diff)
-
-                # first layer
-                W1_1, W1_2 = th[0][:, 0:40], th[1][:, 0:40] # has length 40
-                b1_1, b1_2 = th[0][:, 40:80], th[1][:, 40:80] 
-
-                x1_1, x1_2 = torch.relu(diff1 * W1_1 + b1_1), torch.relu(diff2 * W1_2 + b1_2)
-                # second layer
-                W2_1, W2_2 = th[0][:, 80:1680].reshape((bs, 40, 40)), th[1][:, 80:1680].reshape((bs, 40, 40)) 
-                b2_1, b2_2 = th[0][:, 1680:1720], th[1][:, 1680:1720] # has length 40
-                b2_1_u, b2_2_u = b2_1.unsqueeze(1), b2_2.unsqueeze(1)
-                x1_1, x1_2 = x1_1.unsqueeze(1), x1_2.unsqueeze(1)
-                x2_1, x2_2 = torch.relu(torch.bmm(x1_1, W2_1) + b2_1_u), torch.relu(torch.bmm(x1_2, W2_2) + b2_2_u)
-                # x2_1, x2_2 = x2_1.squeeze(1), x2_2.squeeze(1) # outputs of NN
-
-                # third layer, also 40x40
-                W3_1, W3_2 = th[0][:, 1720:3320].reshape((bs, 40, 40)), th[1][:, 1720:3320].reshape((bs, 40, 40))
-                b3_1, b3_2 = th[0][:, 3320:3360], th[1][:, 3320:3360] # has length 40
-                b3_1_u, b3_2_u = b3_1.unsqueeze(1), b3_2.unsqueeze(1)
-                x3_1, x3_2 = torch.relu(torch.bmm(x2_1, W3_1) + b3_1_u), torch.relu(torch.bmm(x2_2, W3_2) + b3_2_u)
-
-                # fourth layer, final, 40x1
-                W4_1, W4_2 = th[0][:, 3360:3400].reshape((bs, 40, 1)), th[1][:, 3360:3400].reshape((bs, 40, 1))
-                b4_1, b4_2 = th[0][:, 3400:3401], th[1][:, 3400:3401] # has length 1
-                b4_1_u, b4_2_u = b4_1.unsqueeze(1), b4_2.unsqueeze(1)
-                x4_1, x4_2 = torch.bmm(x3_1, W4_1) + b4_1_u, torch.bmm(x3_2, W4_2) + b4_2_u
-
-                # total params is 3565
-                p_1, p_2 = torch.sigmoid(x4_1), torch.sigmoid(x4_2)
             else:
                 p_1, p_2 = torch.sigmoid(th[0]), torch.sigmoid(th[1])
 
+        if iterated:
+            p = torch.cat([p_1_0 * p_2_0, p_1_0 * (1 - p_2_0), (1 - p_1_0) * p_2_0, (1 - p_1_0) * (1 - p_2_0)], dim=-1)
+            P = torch.cat([p_1 * p_2, p_1 * (1 - p_2), (1 - p_1) * p_2, (1 - p_1) * (1 - p_2)], dim=-1)
+            M = torch.matmul(p.unsqueeze(1), torch.inverse(torch.eye(4).to(device) - gamma_inner * P))
+            L_1 = -torch.matmul(M, torch.reshape(p_m_1, (bs, 4, 1))) # player 2's loss, since p2's params are th[0]
+            L_2 = -torch.matmul(M, torch.reshape(p_m_2, (bs, 4, 1))) # player 1's loss, since p1's params are th[1]
+            return [L_1.squeeze(-1), L_2.squeeze(-1), M]
+        else: 
             x, y = torch.cat([p_1, 1 - p_1], dim=-1), torch.cat([p_2, 1 - p_2], dim=-1)
             M = torch.bmm(x.view(bs, 2, 1), y.view(bs, 1, 2)).view(bs, 1, 4)
             L_1 = -torch.matmul(M, torch.reshape(p_m_1, (bs, 4, 1))) # same outputs as old version, but with M
-            L_2 = -torch.matmul(M, torch.reshape(p_m_2, (bs, 4, 1))) 
-            # L_1 = -torch.matmul(torch.matmul(x.unsqueeze(1), p_m_1), y.unsqueeze(-1))
-            # L_2 = -torch.matmul(torch.matmul(x.unsqueeze(1), p_m_2), y.unsqueeze(-1))
-
+            L_2 = -torch.matmul(M, torch.reshape(p_m_2, (bs, 4, 1)))
             return [L_1.squeeze(-1), L_2.squeeze(-1), M]
     
     return Ls
@@ -386,6 +385,9 @@ class MetaGames:
 
         self.diff_game = True if game.find("diff") != -1 or game.find("Diff") != -1 else False
         self.iterated = True if game.find("I") != -1 else False
+        # self.ccdr = ccdr
+        self.nn_game = nn_game
+        # self.adam = True
 
         global def_Ls 
         def_Ls = def_Ls_NN if nn_game else def_Ls_threshold_game
@@ -408,7 +410,8 @@ class MetaGames:
         self.std = 1
         self.d = d[0]
 
-        if nn_game and self.diff_game: self.d = 3565 if self.iterated else 3401 # 40, 7
+        if self.nn_game and self.diff_game: self.d = 3565 if self.iterated else 3401 # 40, 7
+        if self.nn_game and self.diff_game: self.d = 40 if self.iterated else 7
 
         self.opponent = opponent
         if self.opponent == "MAMAML":
@@ -422,8 +425,14 @@ class MetaGames:
         if self.init_th_ba is not None:
             self.inner_th_ba = self.init_th_ba.detach() * torch.ones((self.b, self.d), requires_grad=True).to(device)
         else:
-            self.inner_th_ba = torch.nn.init.normal_(torch.empty((self.b, self.d), requires_grad=True), std=self.std).to(device)
-        outer_th_ba = torch.nn.init.normal_(torch.empty((self.b, self.d), requires_grad=True), std=self.std).to(device)
+            if self.nn_game and self.diff_game: 
+                self.inner_th_ba = torch.nn.init.xavier_normal_(torch.empty((self.b, self.d), requires_grad=True)).to(device)
+            else:
+                self.inner_th_ba = torch.nn.init.normal_(torch.empty((self.b, self.d), requires_grad=True), std=self.std).to(device)
+        if self.nn_game and self.diff_game: 
+            outer_th_ba = torch.nn.init.xavier_normal_(torch.empty((self.b, self.d), requires_grad=True)).to(device)
+        else:
+            outer_th_ba = torch.nn.init.normal_(torch.empty((self.b, self.d), requires_grad=True), std=self.std).to(device)
         state, _, _, M = self.step(outer_th_ba)
         if info:
             return state, M
@@ -529,7 +538,7 @@ class SymmetricMetaGames:
 
 
 class NonMfosMetaGames:
-    def __init__(self, b, p1="NL", p2="NL", game="IPD", lr=None, mmapg_id=None, asym=None, nn_game=False, ccdr=False):
+    def __init__(self, b, p1="NL", p2="NL", game="IPD", lr=None, mmapg_id=None, asym=None, nn_game=False, ccdr=False, adam=False):
         """
         Opponent can be:
         NL = Naive Learner (gradient updates through environment).
@@ -544,7 +553,7 @@ class NonMfosMetaGames:
         self.game = game
         self.ccdr = ccdr
         self.nn_game = nn_game
-        self.adam = True
+        self.adam = adam
         
         global def_Ls 
         def_Ls = def_Ls_NN if self.nn_game else def_Ls_threshold_game
@@ -600,7 +609,10 @@ class NonMfosMetaGames:
             self.eps_2 = 1e-8
             self.t_2 = 0
         
-        if self.nn_game and self.diff_game: self.d = 3565 if self.iterated else 3401 # 40, 7
+        n_neurons = 8 
+        n_params_5 = 2*(n_neurons**2) + 9*n_neurons + 5
+        n_params_1 = 2*(n_neurons**2) + 5*n_neurons + 1
+        if self.nn_game and self.diff_game: self.d = n_params_5 if self.iterated else n_params_1 # (3565, 3401), (40, 7)
 
         self.init_th_ba = None
         if self.p1 == "MAMAML" or self.p2 == "MAMAML":
@@ -734,3 +746,13 @@ class NonMfosMetaGames:
             return torch.sigmoid(torch.cat([last_p1_th_ba, last_p2_th_ba])).detach(), (-l2 * (1 - self.gamma_inner)).detach(), (-l1 * (1 - self.gamma_inner)).detach(), M
         else:
             return torch.sigmoid(torch.cat([last_p1_th_ba, last_p2_th_ba])).detach(), -l2.detach(), -l1.detach(), M
+        
+    def fwd_step(self, p1_th=None, p2_th=None): 
+        # just gets the rewards and plays the game, doesn't update (clone and detach evertyhing just in case)
+        if p1_th is None: p1_th = self.p1_th_ba.detach().clone()
+        if p2_th is None: p2_th = self.p2_th_ba.detach().clone()
+        th_ba = [p1_th, p2_th]
+        l1, l2, M = self.game_batched(th_ba) # here, l2 corresponds to p1_th_ba, l1 corresponds to p2_th_ba
+
+        return torch.sigmoid(torch.cat([self.p1_th_ba.detach(), self.p2_th_ba.detach()])).detach(), -l2.detach(), -l1.detach(), M
+

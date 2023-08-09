@@ -59,6 +59,7 @@ def plot_esv(p1, p2, all_Ms, game, filename, lrs, ax=None, timestep=None, M_mean
     if timestep is not None:
         ax.set_title(f'Timestep: {timestep}')
     filename = filename.replace("/", "_")
+    filename = filename.replace(".", "_")
 
     # splitting filename by {game} and then setting the first part as the log_filename
     og_filename = filename.split(f"{game}")[0][:-1]
@@ -81,7 +82,6 @@ def main(filename, caller="non_mfos"):#, game="PD", p1="NL", p2="NL"):
             break
     if filename_out is None:
         print("No file found")
-        quit()
 
     with open(f'runs/{filename_out}.json', 'r') as file:
         data = json.load(file)
@@ -140,4 +140,4 @@ def main(filename, caller="non_mfos"):#, game="PD", p1="NL", p2="NL"):
         raise NotImplementedError
     
 if __name__ == "__main__":
-    main("non_mfos_adam_test_IMP_lr_2", caller="non_mfos")
+    main("non_mfos_adam_lr_esv_plots_nn0.2", caller="non_mfos")
