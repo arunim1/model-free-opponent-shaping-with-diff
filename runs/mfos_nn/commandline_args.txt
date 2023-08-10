@@ -1,0 +1,9 @@
+{
+  "game": "diffIPD",
+  "opponent": "NL",
+  "entropy": 0.01,
+  "exp_name": "mfos_nn",
+  "checkpoint": "",
+  "mamaml_id": 0,
+  "nn_game": true
+}

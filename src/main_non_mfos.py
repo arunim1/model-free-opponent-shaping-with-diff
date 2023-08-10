@@ -22,10 +22,10 @@ args = parser.parse_args()
 
 
 def worker(args_in):
-    game, nn_game, batch_size, num_steps, p1, p2, lr, asym, ccdr, adam, device = args_in
+    game, nn_game, batch_size, num_steps, p1, p2, lr, asym, ccdr, adam, device, n_neurons = args_in
 
     curr_nn_game = nn_game and game.find("diff") != -1  
-    env = NonMfosMetaGames(batch_size, p1=p1, p2=p2, game=game, lr=lr, asym=asym, nn_game=curr_nn_game, ccdr=ccdr, adam=adam)
+    env = NonMfosMetaGames(batch_size, p1=p1, p2=p2, game=game, lr=lr, asym=asym, nn_game=curr_nn_game, ccdr=ccdr, adam=adam, n_neurons=n_neurons)
     env.reset()
     running_rew_0 = torch.zeros(batch_size).to(device)
     running_rew_1 = torch.zeros(batch_size).to(device)
@@ -135,11 +135,11 @@ def worker(args_in):
     return result
 
 
-if __name__ == "__main__":
+def main(n_neurons=8):
     torch.cuda.empty_cache()
 
-    batch_size = 128 # 4096
-    num_steps = 100 # 100
+    batch_size = 512 # 4096
+    num_steps = 400 # 100
     name = args.exp_name
 
     print(f"RUNNING NAME: {name}")
@@ -189,9 +189,9 @@ if __name__ == "__main__":
                     for p1, p2 in pairs:
                         for lr in lrs:
                             adam = True 
-                            tasks.append((game, nn_game, batch_size, num_steps, p1, p2, lr, asym, ccdr, adam, device))
+                            tasks.append((game, nn_game, batch_size, num_steps, p1, p2, lr, asym, ccdr, adam, device, n_neurons))
 
-    with Pool(6) as pool:
+    with Pool(8) as pool:
         results = pool.map(worker, tasks)
         if not os.path.isdir(f"runs/{name}"):
             os.mkdir(f"runs/{name}")
@@ -210,8 +210,10 @@ if __name__ == "__main__":
     else:
         plot_all(name, caller="non_mfos")
 
-
     # command = ["gcloud", "compute", "instances", "stop", "instance-arunim", "--zone=us-east1-b"]
 
     # print("Executing command:", " ".join(command))
     # subprocess.run(command, capture_output=False, text=True)
+
+if __name__ == "__main__":
+    main()

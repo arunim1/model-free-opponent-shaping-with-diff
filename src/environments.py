@@ -15,7 +15,7 @@ global n_neurons_in
 
 n_neurons_in = 8
 n_params_5 = 2*(n_neurons_in**2) + 9*n_neurons_in + 5
-n_params_1 = 2*(n_neurons_in**2) + 5*n_neurons_in + 1
+n_params_1 = 2*(n_neurons_in**2) + 5*n_neurons_in + 1     
 
 global nn_upper_bound
 
@@ -110,9 +110,7 @@ def def_Ls_NN(p_m_1, p_m_2, bs, gamma_inner=0.96, iterated=False, diff_game=Fals
         th[0] = th[0].clone().to(device) # really not quite sure why this is necessary but it is. 
         th[1] = th[1].clone().to(device)
 
-
         if diff_game: 
-
             def calculate_neurons(n_params):
                 # Coefficients for the quadratic equation
                 a = 2
@@ -134,6 +132,7 @@ def def_Ls_NN(p_m_1, p_m_2, bs, gamma_inner=0.96, iterated=False, diff_game=Fals
                 return math.floor(max(neuron1, neuron2))
 
             n_neurons = calculate_neurons(th[0].shape[1])
+
             diff = diff_nn(th[0], th[1], upper_bound=nn_upper_bound, iterated=iterated) # has shape (bs, 1)
             
             diff1 = diff + 0.1 * torch.rand_like(diff)
@@ -167,7 +166,8 @@ def def_Ls_NN(p_m_1, p_m_2, bs, gamma_inner=0.96, iterated=False, diff_game=Fals
 
                 p_1_0, p_2_0 = torch.sigmoid(x4_1[:, 0:1]), torch.sigmoid(x4_2[:, 0:1])
                 p_1 = torch.reshape(torch.sigmoid(x4_1[:, 1:5]), (bs, 4, 1))
-                p_2 = torch.reshape(torch.sigmoid(x4_1[:, 1:5]), (bs, 4, 1))
+                p_2 = torch.reshape(torch.sigmoid(torch.cat([x4_2[:, 1:2], x4_2[:, 3:4], x4_2[:, 2:3], x4_2[:, 4:5]], dim=-1)), (bs, 4, 1))
+
             else:
                 # fourth layer, final, n_neurons x 1
                 W4_1 = th[0][:, 4*n_neurons + 2*n_neurons**2:5*n_neurons + 2*n_neurons**2].reshape((bs, n_neurons, 1))
@@ -405,6 +405,7 @@ class MetaGames:
         if game.find("PD") != -1:
             d, self.game_batched = pd_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
             self.lr = 1
+            self.lr = 0.3162 if self.diff_game and self.nn_game else 1
         elif game.find("MP") != -1:
             d, self.game_batched = mp_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
             self.lr = 0.1
@@ -566,7 +567,7 @@ class SymmetricMetaGames:
 
 
 class NonMfosMetaGames:
-    def __init__(self, b, p1="NL", p2="NL", game="IPD", lr=None, mmapg_id=None, asym=None, nn_game=False, ccdr=False, adam=False):
+    def __init__(self, b, p1="NL", p2="NL", game="IPD", lr=None, mmapg_id=None, asym=None, nn_game=False, ccdr=False, adam=False, n_neurons=8):
         """
         Opponent can be:
         NL = Naive Learner (gradient updates through environment).
@@ -636,7 +637,10 @@ class NonMfosMetaGames:
             self.beta2_2 = 0.999
             self.eps_2 = 1e-8
             self.t_2 = 0
-        
+           
+        n_neurons_in = n_neurons
+        n_params_5 = 2*(n_neurons_in**2) + 9*n_neurons_in + 5
+        n_params_1 = 2*(n_neurons_in**2) + 5*n_neurons_in + 1 
         if self.nn_game and self.diff_game: self.d = n_params_5 if self.iterated else n_params_1
 
         self.init_th_ba = None

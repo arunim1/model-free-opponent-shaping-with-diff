@@ -28,16 +28,16 @@ class ActorCritic(nn.Module):
     def __init__(self, state_dim, action_dim):
         super(ActorCritic, self).__init__()
         self.actor = nn.Sequential(
-            nn.Linear(state_dim, 256),
+            nn.Linear(state_dim, 1024),
             nn.Tanh(),
-            nn.Linear(256, action_dim * 2),
+            nn.Linear(1024, action_dim * 2),
         )
 
         # critic
         self.critic = nn.Sequential(
-            nn.Linear(state_dim, 256),
+            nn.Linear(state_dim, 1024),
             nn.Tanh(),
-            nn.Linear(256, 1),
+            nn.Linear(1024, 1),
         )
 
         self.action_dim = action_dim
@@ -60,6 +60,7 @@ class ActorCritic(nn.Module):
         memory.states.append(state)
         memory.actions.append(action)
         memory.logprobs.append(action_logprob) 
+
         return action.detach()
 
     def sample(self, state, mean=False):
