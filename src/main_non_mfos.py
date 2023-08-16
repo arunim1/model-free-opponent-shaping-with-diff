@@ -154,7 +154,7 @@ def worker(args_in):
 def main(n_neurons=4):
     torch.cuda.empty_cache()
 
-    batch_size = 1 # 4096
+    batch_size = 200 # 4096
     num_steps = 2000 # 100
     name = args.exp_name
 

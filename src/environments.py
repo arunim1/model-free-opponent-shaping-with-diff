@@ -850,8 +850,8 @@ class NonMfosMetaGames:
             l1_DR1, _, _ = self.game_batched(th_DR1)
             _, l2_DR2, _ = self.game_batched(th_DR2)
 
-            l1 = (l1_reg + 1.18 * l1_CC2 + 1.9 * l1_DR1)/2 - l1_reg/2
-            l2 = (l2_reg + 1.18 * l2_CC1 + 1.9 * l2_DR2)/2 - l2_reg/2
+            l1 = (l1_reg + 1.19 * l1_CC2 + 1.9 * l1_DR1)/2 - l1_reg/2
+            l2 = (l2_reg + 1.19 * l2_CC1 + 1.9 * l2_DR2)/2 - l2_reg/2
         else:
             l1, l2 = l1_reg, l2_reg
 
