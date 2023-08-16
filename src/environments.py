@@ -3,6 +3,8 @@ import torch
 from torch import nn
 import math
 
+from diff_graphs import main as diff_graphs
+
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu" if torch.backends.mps.is_available() else "cpu") # type: ignore
 torch.set_default_dtype(torch.float32)
@@ -13,13 +15,13 @@ global n_params_5
 global n_params_1
 global n_neurons_in 
 
-n_neurons_in = 8
+n_neurons_in = 3
 n_params_5 = 2*(n_neurons_in**2) + 9*n_neurons_in + 5
 n_params_1 = 2*(n_neurons_in**2) + 5*n_neurons_in + 1     
 
 global nn_upper_bound
 
-nn_upper_bound = 0.2
+nn_upper_bound = 1.0
 
 def asymmetrize(p_m_1, p_m_2, eps=1e-3): 
     # [(2,2), (0,3+e), (3,0), (1,1+e)], i.e. changing player 2's incentive to defect
@@ -30,6 +32,17 @@ def asymmetrize(p_m_1, p_m_2, eps=1e-3):
     return p_m_1, p_m_2
 
 
+#inverse sigmoid function:
+def inv_sigmoid(x):
+    return x
+    return torch.log(x/(1-x))
+
+def sigmoid_difference(t_1, t_2):
+    return 1 / (1 + torch.exp(-(t_1 - t_2))) + 1 / (1 + torch.exp(-(t_2 - t_1))) - 1
+
+def tanh_difference(t_1, t_2):
+    return (1 + torch.tanh(t_1 - t_2)) / 2 + (1 + torch.tanh(t_2 - t_1)) / 2 - 1
+
 def diff_nn(th_0, th_1, upper_bound=1.0, iterated=False):
     # output = torch.sum(torch.abs(th_0 - th_1), dim=-1, keepdim=True)
     # output = torch.norm(th_0 - th_1, dim=-1, keepdim=True)
@@ -38,71 +51,80 @@ def diff_nn(th_0, th_1, upper_bound=1.0, iterated=False):
     this means each policy th_0, th_1 can be said to map a value in [0, 1] to a value in [0, 1], where the output is a p(cooperate)
     or for iterated games, mapping a value in [0, 1] to a 5-vector with each entry in [0, 1] 
     """
+    # with torch.no_grad():
+    with torch.enable_grad():
 
-    bs = th_0.shape[0]
-
-    upper_bound = torch.tensor(upper_bound).to(device)
-
-    # Generate an array of inputs within the range [0, 1].
-    diff_inputs = (torch.rand(100) * upper_bound).unsqueeze(1).unsqueeze(1).to(device)
-
-    # Repeat diff_inputs to make it have shape: (bs, 100, 1, 1)
-    diff_inputs_repeated = diff_inputs.repeat(bs, 1, 1, 1)
-
-    def calculate_neurons(n_params):
-        # Coefficients for the quadratic equation
-        a = 2
-        b = 9 if iterated else 5
-        c = -(n_params - 5) if iterated else -(n_params - 1)
+        # check if th_0 and th_1 are nearly the same and return 0 if that is the case:
+        if torch.allclose(th_0, th_1, atol=1e-4):
+            return torch.zeros((th_0.shape[0], 1)).to(device)
         
-        # Calculate the discriminant
-        discriminant = b**2 - 4*a*c
+        bs = th_0.shape[0]
+
+        upper_bound = torch.tensor(upper_bound).to(device)
+
+        # Generate an array of inputs within the range [0, 1].
+        diff_inputs = (torch.rand(100) * upper_bound).unsqueeze(1).unsqueeze(1).to(device)
+
+        diff_inputs = inv_sigmoid(diff_inputs)
+
+        # Repeat diff_inputs to make it have shape: (bs, 100, 1, 1)
+        diff_inputs_repeated = diff_inputs.repeat(bs, 1, 1, 1)
+
+        def calculate_neurons(n_params):
+            # Coefficients for the quadratic equation
+            a = 2
+            b = 9 if iterated else 5
+            c = -(n_params - 5) if iterated else -(n_params - 1)
+            
+            # Calculate the discriminant
+            discriminant = b**2 - 4*a*c
+            
+            # If discriminant is negative, then no real solution exists
+            if discriminant < 0:
+                return None
+            
+            # Calculate the two possible solutions using the quadratic formula
+            neuron1 = (-b + math.sqrt(discriminant)) / (2*a)
+            neuron2 = (-b - math.sqrt(discriminant)) / (2*a)
+            
+            # Return the positive solution as the number of neurons should be positive
+            return math.floor(max(neuron1, neuron2))
+
+        n_neurons = calculate_neurons(th_0.shape[1])
+
+        W1_1, W1_2 = th_0[:, 0:n_neurons].unsqueeze(1).unsqueeze(-1), th_1[:, 0:n_neurons].unsqueeze(1).unsqueeze(-1)  # has size (bs, 1, n_neurons, 1)
+        b1_1, b1_2 = th_0[:, n_neurons:2*n_neurons].unsqueeze(1).unsqueeze(-1), th_1[:, n_neurons:2*n_neurons].unsqueeze(1).unsqueeze(-1)  # has size (bs, 1, n_neurons, 1)
+        W2_1, W2_2 = th_0[:, 2*n_neurons:2*n_neurons + n_neurons**2].reshape((bs, n_neurons, n_neurons)), th_1[:, 2*n_neurons:2*n_neurons + n_neurons**2].reshape((bs, n_neurons, n_neurons)) 
+        b2_1, b2_2 = th_0[:, 2*n_neurons + n_neurons**2:3*n_neurons + n_neurons**2], th_1[:, 2*n_neurons + n_neurons**2:3*n_neurons + n_neurons**2] 
+        W3_1, W3_2 = th_0[:, 3*n_neurons + n_neurons**2:3*n_neurons + 2*n_neurons**2].reshape((bs, n_neurons, n_neurons)), th_1[:, 3*n_neurons + n_neurons**2:3*n_neurons + 2*n_neurons**2].reshape((bs, n_neurons, n_neurons)) 
+        b3_1, b3_2 = th_0[:, 3*n_neurons + 2*n_neurons**2:4*n_neurons + 2*n_neurons**2], th_1[:, 3*n_neurons + 2*n_neurons**2:4*n_neurons + 2*n_neurons**2] 
+        if iterated: 
+            W4_1, W4_2 = th_0[:, 4*n_neurons + 2*n_neurons**2:9*n_neurons + 2*n_neurons**2].reshape((bs, n_neurons, 5)), th_1[:, 4*n_neurons + 2*n_neurons**2:9*n_neurons + 2*n_neurons**2].reshape((bs, n_neurons, 5)) 
+            b4_1, b4_2 = th_0[:, 9*n_neurons + 2*n_neurons**2:9*n_neurons + 2*n_neurons**2 + 5], th_1[:, 9*n_neurons + 2*n_neurons**2:9*n_neurons + 2*n_neurons**2 + 5] 
+        else:
+            W4_1, W4_2 = th_0[:, 4*n_neurons + 2*n_neurons**2:5*n_neurons + 2*n_neurons**2].reshape((bs, n_neurons, 1)), th_1[:, 4*n_neurons + 2*n_neurons**2:5*n_neurons + 2*n_neurons**2].reshape((bs, n_neurons, 1)) 
+            b4_1, b4_2 = th_0[:, 5*n_neurons + 2*n_neurons**2:5*n_neurons + 2*n_neurons**2 + n_neurons], th_1[:, 5*n_neurons + 2*n_neurons**2:5*n_neurons + 2*n_neurons**2 + n_neurons] 
         
-        # If discriminant is negative, then no real solution exists
-        if discriminant < 0:
-            return None
+        x1_1, x1_2 = torch.relu(diff_inputs_repeated * W1_1 + b1_1), torch.relu(diff_inputs_repeated * W1_2 + b1_2)  # each has size (bs, 100, 40, 1)
+        x1_1_u, x1_2_u = x1_1.squeeze(-1), x1_2.squeeze(-1)  # each has size (bs, 1, 100, 40)
+        b2_1_u, b2_2_u = b2_1.unsqueeze(1), b2_2.unsqueeze(1)
+        x2_1, x2_2 = torch.relu(torch.matmul(x1_1_u, W2_1) + b2_1_u), torch.relu(torch.matmul(x1_2_u, W2_2) + b2_2_u)
+        x2_1_u, x2_2_u = x2_1.squeeze(1), x2_2.squeeze(1)  # each has size (bs, 100, 40)
+        b3_1_u, b3_2_u = b3_1.unsqueeze(1), b3_2.unsqueeze(1)
+        x3_1, x3_2 = torch.relu(torch.matmul(x2_1_u, W3_1) + b3_1_u), torch.relu(torch.matmul(x2_2_u, W3_2) + b3_2_u)
+        x3_1_u, x3_2_u = x3_1.squeeze(1), x3_2.squeeze(1)  # each has size (bs, 100, 40)
+        b4_1_u, b4_2_u = b4_1.unsqueeze(1), b4_2.unsqueeze(1)
+        x4_1, x4_2 = torch.matmul(x3_1_u, W4_1) + b4_1_u, torch.matmul(x3_2_u, W4_2) + b4_2_u
+        p_1, p_2 = torch.sigmoid(x4_1), torch.sigmoid(x4_2)
+
+        if p_1.shape[2] == 5: # size is (bs, 100, 5)
+            diff_output = torch.mean(torch.abs(p_1 - p_2), dim=(1,2)).unsqueeze(-1)
+            # has size (bs, 1)
+        else: # size is (bs, 100, 1)
+            diff_output = torch.mean(torch.abs(p_1 - p_2), dim=1)
         
-        # Calculate the two possible solutions using the quadratic formula
-        neuron1 = (-b + math.sqrt(discriminant)) / (2*a)
-        neuron2 = (-b - math.sqrt(discriminant)) / (2*a)
-        
-        # Return the positive solution as the number of neurons should be positive
-        return math.floor(max(neuron1, neuron2))
-
-    n_neurons = calculate_neurons(th_0.shape[1])
-
-    W1_1, W1_2 = th_0[:, 0:n_neurons].unsqueeze(1).unsqueeze(-1), th_1[:, 0:n_neurons].unsqueeze(1).unsqueeze(-1)  # has size (bs, 1, n_neurons, 1)
-    b1_1, b1_2 = th_0[:, n_neurons:2*n_neurons].unsqueeze(1).unsqueeze(-1), th_1[:, n_neurons:2*n_neurons].unsqueeze(1).unsqueeze(-1)  # has size (bs, 1, n_neurons, 1)
-    W2_1, W2_2 = th_0[:, 2*n_neurons:2*n_neurons + n_neurons**2].reshape((bs, n_neurons, n_neurons)), th_1[:, 2*n_neurons:2*n_neurons + n_neurons**2].reshape((bs, n_neurons, n_neurons)) 
-    b2_1, b2_2 = th_0[:, 2*n_neurons + n_neurons**2:3*n_neurons + n_neurons**2], th_1[:, 2*n_neurons + n_neurons**2:3*n_neurons + n_neurons**2] 
-    W3_1, W3_2 = th_0[:, 3*n_neurons + n_neurons**2:3*n_neurons + 2*n_neurons**2].reshape((bs, n_neurons, n_neurons)), th_1[:, 3*n_neurons + n_neurons**2:3*n_neurons + 2*n_neurons**2].reshape((bs, n_neurons, n_neurons)) 
-    b3_1, b3_2 = th_0[:, 3*n_neurons + 2*n_neurons**2:4*n_neurons + 2*n_neurons**2], th_1[:, 3*n_neurons + 2*n_neurons**2:4*n_neurons + 2*n_neurons**2] 
-    if iterated: 
-        W4_1, W4_2 = th_0[:, 4*n_neurons + 2*n_neurons**2:9*n_neurons + 2*n_neurons**2].reshape((bs, n_neurons, 5)), th_1[:, 4*n_neurons + 2*n_neurons**2:9*n_neurons + 2*n_neurons**2].reshape((bs, n_neurons, 5)) 
-        b4_1, b4_2 = th_0[:, 9*n_neurons + 2*n_neurons**2:9*n_neurons + 2*n_neurons**2 + 5], th_1[:, 9*n_neurons + 2*n_neurons**2:9*n_neurons + 2*n_neurons**2 + 5] 
-    else:
-        W4_1, W4_2 = th_0[:, 4*n_neurons + 2*n_neurons**2:5*n_neurons + 2*n_neurons**2].reshape((bs, n_neurons, 1)), th_1[:, 4*n_neurons + 2*n_neurons**2:5*n_neurons + 2*n_neurons**2].reshape((bs, n_neurons, 1)) 
-        b4_1, b4_2 = th_0[:, 5*n_neurons + 2*n_neurons**2:5*n_neurons + 2*n_neurons**2 + n_neurons], th_1[:, 5*n_neurons + 2*n_neurons**2:5*n_neurons + 2*n_neurons**2 + n_neurons] 
-    
-    x1_1, x1_2 = torch.relu(diff_inputs_repeated * W1_1 + b1_1), torch.relu(diff_inputs_repeated * W1_2 + b1_2)  # each has size (bs, 100, 40, 1)
-    x1_1_u, x1_2_u = x1_1.squeeze(-1), x1_2.squeeze(-1)  # each has size (bs, 1, 100, 40)
-    b2_1_u, b2_2_u = b2_1.unsqueeze(1), b2_2.unsqueeze(1)
-    x2_1, x2_2 = torch.relu(torch.matmul(x1_1_u, W2_1) + b2_1_u), torch.relu(torch.matmul(x1_2_u, W2_2) + b2_2_u)
-    x2_1_u, x2_2_u = x2_1.squeeze(1), x2_2.squeeze(1)  # each has size (bs, 100, 40)
-    b3_1_u, b3_2_u = b3_1.unsqueeze(1), b3_2.unsqueeze(1)
-    x3_1, x3_2 = torch.relu(torch.matmul(x2_1_u, W3_1) + b3_1_u), torch.relu(torch.matmul(x2_2_u, W3_2) + b3_2_u)
-    x3_1_u, x3_2_u = x3_1.squeeze(1), x3_2.squeeze(1)  # each has size (bs, 100, 40)
-    b4_1_u, b4_2_u = b4_1.unsqueeze(1), b4_2.unsqueeze(1)
-    x4_1, x4_2 = torch.matmul(x3_1_u, W4_1) + b4_1_u, torch.matmul(x3_2_u, W4_2) + b4_2_u
-    p_1, p_2 = torch.sigmoid(x4_1), torch.sigmoid(x4_2)
-
-    if p_1.shape[2] == 5: # size is (bs, 100, 5)
-        diff_output = torch.mean(torch.abs(p_1 - p_2), dim=(1,2)).unsqueeze(-1)
-        # has size (bs, 1)
-    else: # size is (bs, 100, 1)
-        diff_output = torch.mean(torch.abs(p_1 - p_2), dim=1)
-
-    return diff_output
+        # print(f"diff_output = {diff_output}")
+        return diff_output
 
 
 def def_Ls_NN(p_m_1, p_m_2, bs, gamma_inner=0.96, iterated=False, diff_game=False): # works for ~arbitrary number of params
@@ -132,12 +154,12 @@ def def_Ls_NN(p_m_1, p_m_2, bs, gamma_inner=0.96, iterated=False, diff_game=Fals
                 return math.floor(max(neuron1, neuron2))
 
             n_neurons = calculate_neurons(th[0].shape[1])
-
             diff = diff_nn(th[0], th[1], upper_bound=nn_upper_bound, iterated=iterated) # has shape (bs, 1)
             
             diff1 = diff + 0.1 * torch.rand_like(diff)
             diff2 = diff + 0.1 * torch.rand_like(diff) 
-
+            
+            diff1, diff2 = inv_sigmoid(diff1), inv_sigmoid(diff2)
 
             W1_1, W1_2 = th[0][:, 0:n_neurons], th[1][:, 0:n_neurons] # has length n_neurons
             b1_1, b1_2 = th[0][:, n_neurons:2*n_neurons], th[1][:, n_neurons:2*n_neurons]
@@ -216,7 +238,9 @@ def def_Ls_threshold_game(p_m_1, p_m_2, bs, gamma_inner=0.96, iterated=False, di
                 diff_0 = torch.abs(t_1_0 - t_2_0)
                 p_1_0 = torch.relu(t_1_0 - diff_0)
                 p_2_0 = torch.relu(t_2_0 - diff_0)
-                diff = torch.abs(t_1 - t_2)
+                diff = torch.abs(t_1 - t_2)**2
+                # diff = sigmoid_difference(t_1, t_2)
+                # diff = tanh_difference(t_1, t_2)
                 p_1 = torch.relu(t_1 - diff)
                 p_2 = torch.relu(t_2 - diff)
             else:
@@ -232,7 +256,9 @@ def def_Ls_threshold_game(p_m_1, p_m_2, bs, gamma_inner=0.96, iterated=False, di
         else: 
             if diff_game:
                 t_1, t_2 = torch.sigmoid(th[0]), torch.sigmoid(th[1])
-                diff = torch.abs(t_1 - t_2)
+                diff = torch.abs(t_1 - t_2)**2
+                # diff = sigmoid_difference(t_1, t_2)
+                # diff = tanh_difference(t_1, t_2)
                 p_1 = torch.relu(t_1 - diff)
                 p_2 = torch.relu(t_2 - diff)
             else:
@@ -326,6 +352,13 @@ def get_gradient(function, param):
     grad = torch.autograd.grad(function, param, create_graph=True, allow_unused=True)[0]
     return grad
 
+def get_batch_gradient(batch_loss, th):
+    identity = torch.eye(batch_loss.size(0)).diag().to(batch_loss.device)
+    # Compute the gradient for each sample in the batch
+    grad, = torch.autograd.grad(batch_loss, th, grad_outputs=identity, retain_graph=True)
+    
+    return grad
+
 def compute_best_response(outer_th_ba):
     batch_size = 1
     std = 0
@@ -380,7 +413,7 @@ def generate_mamaml(b, d, inner_env, game, inner_lr=1):
 
 
 class MetaGames:
-    def __init__(self, b, opponent="NL", game="IPD", mmapg_id=0, nn_game=False):
+    def __init__(self, b, opponent="NL", game="IPD", mmapg_id=0, nn_game=False, ccdr=False):
         """
         Opponent can be:
         NL = Naive Learner (gradient updates through environment).
@@ -395,7 +428,7 @@ class MetaGames:
 
         self.diff_game = True if game.find("diff") != -1 or game.find("Diff") != -1 else False
         self.iterated = True if game.find("I") != -1 else False
-        # self.ccdr = ccdr
+        self.ccdr = ccdr
         self.nn_game = nn_game
         # self.adam = True
 
@@ -414,6 +447,9 @@ class MetaGames:
             self.lr = 1
         elif game.find("SH") != -1:
             d, self.game_batched = sh_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
+            self.lr = 1
+        elif game.find("SL") != -1:
+            d, self.game_batched = sl_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
             self.lr = 1
         else:
             raise NotImplementedError
@@ -436,11 +472,21 @@ class MetaGames:
             self.inner_th_ba = self.init_th_ba.detach() * torch.ones((self.b, self.d), requires_grad=True).to(device)
         else:
             if self.nn_game and self.diff_game: 
-                self.inner_th_ba = torch.nn.init.xavier_normal_(torch.empty((self.b, self.d), requires_grad=True)).to(device)
+                # self.inner_th_ba = torch.nn.init.xavier_normal_(torch.empty((self.b, self.d), requires_grad=True)).to(device)
+                list_of_tensors = []
+                for _ in range(self.b):
+                    tensor = torch.nn.init.xavier_normal_(torch.empty(1, self.d, requires_grad=True))
+                    list_of_tensors.append(tensor)
+                self.inner_th_ba = torch.cat(list_of_tensors, dim=0).to(device)
             else:
                 self.inner_th_ba = torch.nn.init.normal_(torch.empty((self.b, self.d), requires_grad=True), std=self.std).to(device)
         if self.nn_game and self.diff_game: 
-            outer_th_ba = torch.nn.init.xavier_normal_(torch.empty((self.b, self.d), requires_grad=True)).to(device)
+            # outer_th_ba = torch.nn.init.xavier_normal_(torch.empty((self.b, self.d), requires_grad=True)).to(device)
+            list_of_tensors = []
+            for _ in range(self.b):
+                tensor = torch.nn.init.xavier_normal_(torch.empty(1, self.d, requires_grad=True))
+                list_of_tensors.append(tensor)
+            outer_th_ba = torch.cat(list_of_tensors, dim=0).to(device)
         else:
             outer_th_ba = torch.nn.init.normal_(torch.empty((self.b, self.d), requires_grad=True), std=self.std).to(device)
         state, _, _, M = self.step(outer_th_ba)
@@ -449,44 +495,91 @@ class MetaGames:
         else:
             return state
 
+    def game_maybe_ccdr(self, th_ba, outer_th_ba=None):
+        # th_ba = [self.inner_th_ba, outer_th_ba.detach()] equiv to th_ba = [self.p2_th_ba, self.p1_th_ba]
+        l1_reg, l2_reg, M = self.game_batched(th_ba) # l2 is for p1 aka p1_th_ba, l1 is for p2 aka p2_th_ba
+        self.ccdr = False
+        if self.ccdr: 
+            th_CC1 = [outer_th_ba.detach(), outer_th_ba.detach()]
+            th_CC2 = [self.inner_th_ba, self.inner_th_ba]
+            if self.nn_game and self.diff_game:
+                list_of_tensors = []
+                for _ in range(self.b):
+                    tensor = torch.nn.init.xavier_normal_(torch.empty(1, self.d, requires_grad=True))-100
+                    list_of_tensors.append(tensor)
+                th_DR1 = [self.inner_th_ba, torch.cat(list_of_tensors, dim=0).to(device)]
+                list_of_tensors = []
+                for _ in range(self.b):
+                    tensor = torch.nn.init.xavier_normal_(torch.empty(1, self.d, requires_grad=True))-100
+                    list_of_tensors.append(tensor)
+                th_DR2 = [torch.cat(list_of_tensors, dim=0).to(device), outer_th_ba.detach()]
+
+                # th_DR1 = [self.inner_th_ba, torch.nn.init.xavier_normal_(torch.empty_like(outer_th_ba.detach())-100)]  
+                # th_DR2 = [torch.nn.init.xavier_normal_(torch.empty_like(self.inner_th_ba))-100, outer_th_ba.detach()]
+            else:
+                th_DR1 = [self.inner_th_ba, torch.nn.init.normal_(torch.empty_like(outer_th_ba.detach()), std=self.std)]  
+                th_DR2 = [torch.nn.init.normal_(torch.empty_like(self.inner_th_ba), std=self.std), outer_th_ba.detach()]
+            _, l2_CC1, _ = self.game_batched(th_CC1)
+            l1_CC2, _, _ = self.game_batched(th_CC2)
+            l1_DR1, _, _ = self.game_batched(th_DR1)
+            _, l2_DR2, _ = self.game_batched(th_DR2)
+            l1 = (l1_reg + l1_CC2 + l1_DR1)/2 - l1_reg/2
+            l2 = (l2_reg + l2_CC1 + l2_DR2)/2 - l2_reg/2 
+            # l1 = (l1_CC2 + l1_DR1)/2
+            # l2 = (l2_CC1 + l2_DR2)/2
+        else:
+            l1, l2 = l1_reg, l2_reg
+        
+        return l1, l2, M
+
     def step(self, outer_th_ba):
         last_inner_th_ba = self.inner_th_ba.detach().clone()
         if self.opponent == "NL" or self.opponent == "MAMAML":
             th_ba = [self.inner_th_ba, outer_th_ba.detach()]
-            l1, l2, M = self.game_batched(th_ba)
+            # l1, l2, M = self.game_batched(th_ba)
+            l1, l2, M = self.game_maybe_ccdr(th_ba, outer_th_ba)
             grad = get_gradient(l1.sum(), self.inner_th_ba)
             with torch.no_grad():
                 self.inner_th_ba -= grad * self.lr
         elif self.opponent == "LOLA":
             th_ba = [self.inner_th_ba, outer_th_ba.detach()]
             th_ba[1].requires_grad = True
-            l1, l2, M = self.game_batched(th_ba)
+            # l1, l2, M = self.game_batched(th_ba)
+            l1, l2, M = self.game_maybe_ccdr(th_ba, outer_th_ba)
             losses = [l1, l2]
             grad_L = [[get_gradient(losses[j].sum(), th_ba[i]) for j in range(2)] for i in range(2)]
             term = (grad_L[1][0] * grad_L[1][1]).sum()
             grad = grad_L[0][0] - self.lr * get_gradient(term, th_ba[0])
             with torch.no_grad():
                 self.inner_th_ba -= grad * self.lr
-        elif self.opponent == "BR":
+        elif self.opponent == "BR": # not sure if BR should be doing ccdr inside loop...
             num_steps = 1000
             inner_th_ba = torch.nn.init.normal_(torch.empty((self.b, 5), requires_grad=True), std=self.std).to(device)
             for i in range(num_steps):
                 th_ba = [inner_th_ba, outer_th_ba.detach()]
-                l1, l2, M = self.game_batched(th_ba)
+                # l1, l2, M = self.game_batched(th_ba)
+                l1, l2, M = self.game_maybe_ccdr(th_ba, outer_th_ba)
                 grad = get_gradient(l1.sum(), inner_th_ba)
                 with torch.no_grad():
                     inner_th_ba -= grad * self.lr
             with torch.no_grad():
                 self.inner_th_ba = inner_th_ba
                 th_ba = [self.inner_th_ba, outer_th_ba.detach()]
-                l1, l2, M = self.game_batched(th_ba)
+                # l1, l2, M = self.game_batched(th_ba)
+                l1, l2, M = self.game_maybe_ccdr(th_ba, outer_th_ba)
         else:
             raise NotImplementedError
 
-        if self.iterated:
-            return torch.sigmoid(torch.cat((outer_th_ba, last_inner_th_ba), dim=-1)).detach(), (-l2 * (1 - self.gamma_inner)).detach(), (-l1 * (1 - self.gamma_inner)).detach(), M
-        else:
-            return torch.sigmoid(torch.cat((outer_th_ba, last_inner_th_ba), dim=-1)).detach(), -l2.detach(), -l1.detach(), M
+        if self.nn_game and self.diff_game:
+            if self.iterated:
+                return torch.cat((outer_th_ba, last_inner_th_ba), dim=-1).detach(), (-l2 * (1 - self.gamma_inner)).detach(), (-l1 * (1 - self.gamma_inner)).detach(), M
+            else:
+                return torch.cat([outer_th_ba, last_inner_th_ba], dim=-1).detach(), -l2.detach(), -l1.detach(), M
+        else: 
+            if self.iterated:
+                return torch.sigmoid(torch.cat((outer_th_ba, last_inner_th_ba), dim=-1)).detach(), (-l2 * (1 - self.gamma_inner)).detach(), (-l1 * (1 - self.gamma_inner)).detach(), M
+            else:
+                return torch.sigmoid(torch.cat((outer_th_ba, last_inner_th_ba), dim=-1)).detach(), -l2.detach(), -l1.detach(), M
 
     def fwd_step(self, p1_th=None, p2_th=None): #TODO check that this makes sense for MFOS and self
         # just gets the rewards and plays the game, doesn't update (clone and detach evertyhing just in case)
@@ -494,8 +587,9 @@ class MetaGames:
         if p2_th is None: p2_th = self.p2_th_ba.detach().clone()
         th_ba = [p1_th, p2_th]
         l1, l2, M = self.game_batched(th_ba) # here, l2 corresponds to p1_th_ba, l1 corresponds to p2_th_ba
-
-        return torch.sigmoid(torch.cat([self.p1_th_ba.detach(), self.p2_th_ba.detach()])).detach(), -l2.detach(), -l1.detach(), M
+        if self.nn_game and self.diff_game:
+            return torch.cat([self.p1_th_ba.detach(), self.p2_th_ba.detach()]).detach(), -l2.detach(), -l1.detach(), M
+        else: return torch.sigmoid(torch.cat([self.p1_th_ba.detach(), self.p2_th_ba.detach()])).detach(), -l2.detach(), -l1.detach(), M
 
 
 class SymmetricMetaGames:
@@ -583,12 +677,12 @@ class NonMfosMetaGames:
         self.ccdr = ccdr
         self.nn_game = nn_game
         self.adam = adam
-        
-        global def_Ls 
-        def_Ls = def_Ls_NN if self.nn_game else def_Ls_threshold_game
 
         self.diff_game = True if game.find("diff") != -1 or game.find("Diff") != -1 else False
         self.iterated = True if game.find("I") != -1 else False
+
+        global def_Ls 
+        def_Ls = def_Ls_NN if self.nn_game and self.diff_game else def_Ls_threshold_game
 
         if game.find("PD") != -1:
             d, self.game_batched = pd_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game, asym=asym)
@@ -655,12 +749,19 @@ class NonMfosMetaGames:
             print(self.init_th_ba)
 
     def reset(self, info=False):
-        # self.p1_th_ba = torch.nn.init.normal_(torch.empty((self.b, self.d), requires_grad=True), std=self.std).to(device)
-        # self.p2_th_ba = torch.nn.init.normal_(torch.empty((self.b, self.d), requires_grad=True), std=self.std).to(device)
-        # using xavier_normal_ for nn games
         if self.nn_game and self.diff_game: 
-            self.p1_th_ba = torch.nn.init.xavier_normal_(torch.empty((self.b, self.d), requires_grad=True)).to(device)
-            self.p2_th_ba = torch.nn.init.xavier_normal_(torch.empty((self.b, self.d), requires_grad=True)).to(device)
+            # self.p1_th_ba = torch.nn.init.xavier_normal_(torch.empty((self.b, self.d), requires_grad=True)).to(device)
+            list_of_tensors = []
+            for _ in range(self.b):
+                tensor = torch.nn.init.xavier_normal_(torch.empty(1, self.d, requires_grad=True))
+                list_of_tensors.append(tensor)
+            self.p1_th_ba = torch.cat(list_of_tensors, dim=0).to(device)
+            # self.p2_th_ba = torch.nn.init.xavier_normal_(torch.empty((self.b, self.d), requires_grad=True)).to(device)
+            list_of_tensors = []
+            for _ in range(self.b):
+                tensor = torch.nn.init.xavier_normal_(torch.empty(1, self.d, requires_grad=True))
+                list_of_tensors.append(tensor)
+            self.p2_th_ba = torch.cat(list_of_tensors, dim=0).to(device)
         else:
             self.p1_th_ba = torch.nn.init.normal_(torch.empty((self.b, self.d), requires_grad=True), std=self.std).to(device)
             self.p2_th_ba = torch.nn.init.normal_(torch.empty((self.b, self.d), requires_grad=True), std=self.std).to(device)
@@ -727,8 +828,20 @@ class NonMfosMetaGames:
             th_CC1 = [self.p1_th_ba, self.p1_th_ba]
             th_CC2 = [self.p2_th_ba, self.p2_th_ba]
             if self.nn_game and self.diff_game:
-                th_DR1 = [self.p2_th_ba, torch.nn.init.xavier_normal_(torch.empty_like(self.p1_th_ba))]  
-                th_DR2 = [torch.nn.init.xavier_normal_(torch.empty_like(self.p2_th_ba)), self.p1_th_ba]
+                list_of_tensors = []
+                for _ in range(self.b):
+                    tensor = torch.nn.init.xavier_normal_(torch.empty(1, self.d, requires_grad=True))
+                    list_of_tensors.append(tensor)
+                th_DR1 = [self.p2_th_ba, torch.cat(list_of_tensors, dim=0).to(device)]
+                list_of_tensors = []
+                for _ in range(self.b):
+                    tensor = torch.nn.init.xavier_normal_(torch.empty(1, self.d, requires_grad=True))
+                    list_of_tensors.append(tensor)
+                th_DR2 = [torch.cat(list_of_tensors, dim=0).to(device), self.p1_th_ba]
+                # th_DR1 = [self.p2_th_ba, torch.nn.init.xavier_normal_(torch.empty_like(self.p1_th_ba))]  
+                # th_DR2 = [torch.nn.init.xavier_normal_(torch.empty_like(self.p2_th_ba)), self.p1_th_ba]
+                # th_DR1 = [self.p2_th_ba, torch.zeros_like(self.p1_th_ba)-10]
+                # th_DR2 = [torch.zeros_like(self.p2_th_ba)-10, self.p1_th_ba]
             else:
                 th_DR1 = [self.p2_th_ba, torch.nn.init.normal_(torch.empty_like(self.p1_th_ba), std=self.std)]  
                 th_DR2 = [torch.nn.init.normal_(torch.empty_like(self.p2_th_ba), std=self.std), self.p1_th_ba]
@@ -736,20 +849,24 @@ class NonMfosMetaGames:
             l1_CC2, _, _ = self.game_batched(th_CC2)
             l1_DR1, _, _ = self.game_batched(th_DR1)
             _, l2_DR2, _ = self.game_batched(th_DR2)
-            l1 = (l1_reg + l1_CC2 + l1_DR1)/3  
-            l2 = (l2_reg + l2_CC1 + l2_DR2)/3  
+
+            l1 = (l1_reg + 1.18 * l1_CC2 + 1.9 * l1_DR1)/2 - l1_reg/2
+            l2 = (l2_reg + 1.18 * l2_CC1 + 1.9 * l2_DR2)/2 - l2_reg/2
         else:
             l1, l2 = l1_reg, l2_reg
 
         # UPDATE P1
         if self.p1 == "NL" or self.p1 == "MAMAML":
             grad = get_gradient(l2.sum(), self.p1_th_ba)
+            # grad = get_batch_gradient(l2.squeeze(), self.p1_th_ba)
             self.update(1, grad)
         elif self.p1 == "LOLA":
             losses = [l1, l2]
-            grad_L = [[get_gradient(losses[j].sum(), th_ba[i]) for j in range(2)] for i in range(2)]
+            # grad_L = [[get_gradient(losses[j].sum(), th_ba[i]) for j in range(2)] for i in range(2)]
+            grad_L = [[get_gradient(losses[j].sum(), i) for j in range(2)] for i in [self.p2_th_ba, self.p1_th_ba]]
             term = (grad_L[0][0] * grad_L[0][1]).sum()
-            grad = grad_L[1][1] - self.lr_2 * get_gradient(term, th_ba[1])
+            # grad = grad_L[1][1] - self.lr_2 * get_gradient(term, th_ba[1])
+            grad = grad_L[1][1] - self.lr_2 * get_gradient(term, self.p1_th_ba)
             self.update(1, grad)
         elif self.p1 == "STATIC":
             pass
@@ -759,18 +876,27 @@ class NonMfosMetaGames:
         # UPDATE P2
         if self.p2 == "NL" or self.p2 == "MAMAML":
             grad = get_gradient(l1.sum(), self.p2_th_ba)
+            # grad = get_batch_gradient(l1.squeeze(), self.p2_th_ba)
             self.update(2, grad)
         elif self.p2 == "LOLA":
             losses = [l1, l2]
-            grad_L = [[get_gradient(losses[j].sum(), th_ba[i]) for j in range(2)] for i in range(2)] 
+            # grad_L = [[get_gradient(losses[j].sum(), th_ba[i]) for j in range(2)] for i in range(2)] 
+            grad_L = [[get_gradient(losses[j].sum(), i) for j in range(2)] for i in [self.p2_th_ba, self.p1_th_ba]]
             term = (grad_L[1][0] * grad_L[1][1]).sum()
-            grad = grad_L[0][0] - self.lr_2 * get_gradient(term, th_ba[0])
+            # grad = grad_L[0][0] - self.lr_2 * get_gradient(term, th_ba[0])
+            grad = grad_L[0][0] - self.lr_2 * get_gradient(term, self.p2_th_ba)
             self.update(2, grad)
         elif self.p2 == "STATIC":
             pass
         else:
             raise NotImplementedError
         
+        if self.nn_game and self.diff_game:
+            if self.iterated:
+                return torch.cat([last_p1_th_ba, last_p2_th_ba]).detach(), (-l2 * (1 - self.gamma_inner)).detach(), (-l1 * (1 - self.gamma_inner)).detach(), M
+            else:
+                return torch.cat([last_p1_th_ba, last_p2_th_ba]).detach(), -l2.detach(), -l1.detach(), M
+
         if self.iterated:
             return torch.sigmoid(torch.cat([last_p1_th_ba, last_p2_th_ba])).detach(), (-l2 * (1 - self.gamma_inner)).detach(), (-l1 * (1 - self.gamma_inner)).detach(), M
         else:
@@ -784,4 +910,4 @@ class NonMfosMetaGames:
         l1, l2, M = self.game_batched(th_ba) # here, l2 corresponds to p1_th_ba, l1 corresponds to p2_th_ba
 
         return torch.sigmoid(torch.cat([self.p1_th_ba.detach(), self.p2_th_ba.detach()])).detach(), -l2.detach(), -l1.detach(), M
-
+    

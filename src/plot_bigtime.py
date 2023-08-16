@@ -296,7 +296,7 @@ def plot_non_mfos(data, filename): # FIXED!
 
         plt.clf()
         plot_rew_vs_ep(p1=curr_p1, p2=curr_p2, game=curr_game, values_1=curr_rew_1, values_2=curr_rew_2, filename=fname)
-        plot_esv(p1=curr_p1, p2=curr_p2, all_Ms=curr_Ms, game=curr_game, filename=fname, M_mean=curr_M_mean)
+        if curr_Ms is not None: plot_esv(p1=curr_p1, p2=curr_p2, all_Ms=curr_Ms, game=curr_game, filename=fname, M_mean=curr_M_mean)
 
         if entry["end_params"] is not None and entry["all_params_1"] is not None:
             curr_end_params = entry["end_params"]

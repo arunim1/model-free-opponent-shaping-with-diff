@@ -48,11 +48,11 @@ class ActorCritic(nn.Module):
 
     def act(self, state, memory):
         action_mean, action_var = torch.split(self.actor(state), self.action_dim, dim=-1)
-        # cov_mat = torch.diag_embed(F.softplus(action_var))
-        scale_tril = torch.sqrt(torch.diag_embed(F.softplus(action_var))).to(device)
+        cov_mat = torch.diag_embed(F.softplus(action_var))
+        # scale_tril = torch.sqrt(torch.diag_embed(F.softplus(action_var))).to(device)
 
-        # dist = MultivariateNormal(action_mean, cov_mat)
-        dist = MultivariateNormal(action_mean, scale_tril=scale_tril)
+        dist = MultivariateNormal(action_mean, cov_mat)
+        # dist = MultivariateNormal(action_mean, scale_tril=scale_tril)
 
         action = dist.sample()
         action_logprob = dist.log_prob(action)
@@ -66,11 +66,11 @@ class ActorCritic(nn.Module):
     def sample(self, state, mean=False):
         with torch.no_grad():
             action_mean, action_var = torch.split(self.actor(state), self.action_dim, dim=-1)
-            # cov_mat = torch.diag_embed(F.softplus(action_var))
-            scale_tril = torch.sqrt(torch.diag_embed(F.softplus(action_var))).to(device)
+            cov_mat = torch.diag_embed(F.softplus(action_var))
+            # scale_tril = torch.sqrt(torch.diag_embed(F.softplus(action_var))).to(device)
 
-            # dist = MultivariateNormal(action_mean, cov_mat)
-            dist = MultivariateNormal(action_mean, scale_tril=scale_tril)
+            dist = MultivariateNormal(action_mean, cov_mat)
+            # dist = MultivariateNormal(action_mean, scale_tril=scale_tril)
             
             if mean:
                 action = action_mean
@@ -83,13 +83,12 @@ class ActorCritic(nn.Module):
         action_var = F.softplus(action_var)
         #   action_var = self.action_var.expand_as(action_mean)
 
-        # cov_mat = torch.diag_embed(action_var).to(device)
+        cov_mat = torch.diag_embed(action_var).to(device)
         
-        # scale_tril = torch.sqrt(action_var).to(device)
-        scale_tril = torch.sqrt(torch.diag_embed(action_var)).to(device)
+        # scale_tril = torch.sqrt(torch.diag_embed(action_var)).to(device)
 
-        # dist = MultivariateNormal(action_mean, cov_mat)
-        dist = MultivariateNormal(action_mean, scale_tril=scale_tril)
+        dist = MultivariateNormal(action_mean, cov_mat)
+        # dist = MultivariateNormal(action_mean, scale_tril=scale_tril)
 
         action_logprobs = dist.log_prob(action) 
         dist_entropy = dist.entropy() 

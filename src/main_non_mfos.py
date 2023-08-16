@@ -15,6 +15,7 @@ from tuning_plotting import main as plot_lr_tuning
 from asymm_plotting_full import main as plot_asymm
 from plot_bigtime import main as plot_all
 from esvvslr import main as plot_esv_vs_lr
+from diff_graphs import main as diff_graphs
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--exp-name", type=str, default="")
@@ -26,9 +27,12 @@ def worker(args_in):
 
     curr_nn_game = nn_game and game.find("diff") != -1  
     env = NonMfosMetaGames(batch_size, p1=p1, p2=p2, game=game, lr=lr, asym=asym, nn_game=curr_nn_game, ccdr=ccdr, adam=adam, n_neurons=n_neurons)
-    env.reset()
-    running_rew_0 = torch.zeros(batch_size).to(device)
-    running_rew_1 = torch.zeros(batch_size).to(device)
+    state, _ = env.reset(True)
+    split_params = torch.split(state, batch_size, dim=0) 
+    # diff_graphs(split_params[0], split_params[1], iterated = game.find("I") != -1, p1=p1, p2=p2)
+
+    running_rew_0 = torch.zeros(batch_size).to(device) 
+    running_rew_1 = torch.zeros(batch_size).to(device) 
     all_params_1 = []
     all_Ms = []
     rewards_1 = []
@@ -38,7 +42,9 @@ def worker(args_in):
     last_r1 = 0
     M_mean = torch.zeros(4).to(device)
 
-    for i in tqdm(range(num_steps)):
+    pbar = tqdm(range(num_steps), desc="Training")
+    
+    for i in pbar:
         params, r0, r1, M = env.step() # _, r0, r1, M
         running_rew_0 += r0.squeeze(-1)
         running_rew_1 += r1.squeeze(-1)
@@ -56,7 +62,12 @@ def worker(args_in):
         rewards_1.append(r0.mean(dim=0).squeeze().tolist())
         rewards_2.append(r1.mean(dim=0).squeeze().tolist())
 
-        if i == num_steps - 1: last_params[0], last_r0, last_r1 = params, r0, r1
+        pbar.set_description(f"r0: {r0.detach().mean().item():.2f}, r1: {r1.detach().mean().item():.2f}")
+
+        if i == num_steps - 1: # or i == num_steps/2: 
+            last_params[0], last_r0, last_r1 = params, r0, r1
+            split_params = torch.split(last_params[0], batch_size, dim=0) 
+            diff_graphs(split_params[0], split_params[1], iterated = game.find("I") != -1, p1=p1, p2=p2)
 
     stability_test = False
     if stability_test:
@@ -88,18 +99,22 @@ def worker(args_in):
     
     # Collect all runs into a single tensor
     # Reshape your data to a matrix of shape (5, 500*4)
-    all_Ms_np = np.array(all_Ms).transpose(1, 0, 2)
-    all_Ms_reshaped = all_Ms_np.reshape(5, -1)
-    # Compute pairwise Euclidean distances
-    distances = pdist(all_Ms_reshaped, 'euclidean')
-    # Convert to square form
-    square_distances = squareform(distances)
-    # Sum the distances for each run
-    sum_distances = square_distances.sum(axis=1)
-    # Find the index of the most representative run
-    most_representative_idx = sum_distances.argmin()
-    # Get the most representative run
-    most_representative_run = all_Ms_np[most_representative_idx].tolist()
+
+    try:
+        all_Ms_np = np.array(all_Ms).transpose(1, 0, 2)
+        all_Ms_reshaped = all_Ms_np.reshape(5, -1)
+        # Compute pairwise Euclidean distances
+        distances = pdist(all_Ms_reshaped, 'euclidean')
+        # Convert to square form
+        square_distances = squareform(distances)
+        # Sum the distances for each run
+        sum_distances = square_distances.sum(axis=1)
+        # Find the index of the most representative run
+        most_representative_idx = sum_distances.argmin()
+        # Get the most representative run
+        most_representative_run = all_Ms_np[most_representative_idx].tolist()
+    except:
+        most_representative_run = None
     
     M_mean /= num_steps
     M_mean_list = M_mean.tolist()
@@ -107,6 +122,7 @@ def worker(args_in):
     M_mean_list = [round(x, 2) for x in M_mean_list]
     
     split_params = torch.split(last_params[0], batch_size, dim=0) 
+    # diff_graphs(split_params[0], split_params[1], iterated = game.find("I") != -1)
     end_params = [split_params[0][:50].tolist(), split_params[1][:50].tolist()]
 
     mean_rew_0 = (running_rew_0.mean() / num_steps).item()
@@ -135,11 +151,11 @@ def worker(args_in):
     return result
 
 
-def main(n_neurons=8):
+def main(n_neurons=4):
     torch.cuda.empty_cache()
 
-    batch_size = 512 # 4096
-    num_steps = 400 # 100
+    batch_size = 1 # 4096
+    num_steps = 2000 # 100
     name = args.exp_name
 
     print(f"RUNNING NAME: {name}")
@@ -158,29 +174,27 @@ def main(n_neurons=8):
     diff_games = diff_oneshot + diff_iterated
     all_games = base_games + iterated + diff_oneshot + diff_iterated
     # all_games = diff_oneshot
-    p1s = ["NL", "LOLA"]
-    p2s = ["NL", "LOLA"]
+    p1s = ["NL"]#, "LOLA"]
+    p2s = ["NL"]#, "LOLA"]
     pairs = product(p1s, p2s)
     pairs = list(set(tuple(sorted(pair)) for pair in pairs))
 
-    # list lrs from 0.001 to 1.0, with a few in between each power of 10
-    lrs = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2., 5., 10.]
     asymmetries = [0.0, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0]
     ccdrs = [False, True]
     nn_games = [True, False]
 
-    # lrs = [(1.62885553603262, 2.220943843335561)]
-    lrs =[0.1, 0.2, 0.5, 1, 2, 5, 10]
-    lrs = np.logspace(-2, 1, num=20)
+    # lrs = np.logspace(-2, 1, num=20)
+    lrs = [0.3612]
+    lrs = [1]
     asymmetries = [None]
-    # ccdrs = [False]
+    ccdrs = [True]
     nn_games = [True]
     
     # Alternative method: use multiprocessing
     multiprocessing.set_start_method('spawn')
 
     tasks = []
-    for game in diff_games: 
+    for game in diff_oneshot: 
         if game in diff_games: nn_games_2 = nn_games
         else: nn_games_2 = [False] 
         for nn_game in nn_games_2: 
@@ -188,10 +202,10 @@ def main(n_neurons=8):
                 for asym in asymmetries: 
                     for p1, p2 in pairs:
                         for lr in lrs:
-                            adam = True 
+                            adam = False 
                             tasks.append((game, nn_game, batch_size, num_steps, p1, p2, lr, asym, ccdr, adam, device, n_neurons))
 
-    with Pool(8) as pool:
+    with Pool(3) as pool:
         results = pool.map(worker, tasks)
         if not os.path.isdir(f"runs/{name}"):
             os.mkdir(f"runs/{name}")
@@ -216,4 +230,4 @@ def main(n_neurons=8):
     # subprocess.run(command, capture_output=False, text=True)
 
 if __name__ == "__main__":
-    main()
+    main(3)

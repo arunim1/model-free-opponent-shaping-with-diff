@@ -5,6 +5,7 @@ import os
 import argparse
 import json
 from plot_bigtime import main as plot_all
+from diff_graphs import main as diff_graphs
 
 from tqdm import tqdm
 
@@ -16,6 +17,7 @@ parser.add_argument("--exp-name", type=str, default="")
 parser.add_argument("--checkpoint", type=str, default="")
 parser.add_argument("--mamaml-id", type=int, default=0)
 parser.add_argument("--nn-game", action="store_true", default=False)
+parser.add_argument("--ccdr", action="store_true", default=False)
 args = parser.parse_args()
 
 
@@ -29,8 +31,8 @@ if __name__ == "__main__":
     lr = 0.08 #0.002  # parameters for Adam optimizer
     betas = (0.9, 0.999)
 
-    max_episodes = 1024 # 1024
-    batch_size = 32 # 4096
+    max_episodes = 8 # 1024
+    batch_size = 64 # 4096
     random_seed = None
     num_steps = 400
 
@@ -45,11 +47,11 @@ if __name__ == "__main__":
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu" if torch.backends.mps.is_available() else "cpu") # type: ignore
     nn_game = args.nn_game
-
+    ccdr = args.ccdr 
     #############################################
 
     # creating environment
-    env = MetaGames(batch_size, opponent=args.opponent, game=args.game, mmapg_id=args.mamaml_id, nn_game=nn_game)
+    env = MetaGames(batch_size, opponent=args.opponent, game=args.game, mmapg_id=args.mamaml_id, nn_game=nn_game, ccdr=ccdr)
 
     action_dim = env.d
     state_dim = env.d * 2
@@ -115,7 +117,7 @@ if __name__ == "__main__":
                 # M_1 = M.mean(dim=0).squeeze().tolist()
                 M_mean += M.detach().mean(dim=0).squeeze() # has shape (4,)
                 all_Ms.append(M_1)
-                
+
                 if not nn_game:
                     if args.game.find("I") != -1: # iterated games 
                         # params_1 = state[:batch_size, :] # has size batch_size x 10, so we need to split it
@@ -126,7 +128,12 @@ if __name__ == "__main__":
                     all_params_1.append(params_1[0,:].detach().tolist()) # just the first run of the batch
 
                 rewards_1.append(reward.mean(dim=0).squeeze().tolist()) # MFOS reward
-                rewards_2.append(info.mean(dim=0).squeeze().tolist()) # opponent reward
+                rewards_2.append(info.mean(dim=0).squeeze().tolist()) # opponent rewardarc
+
+                if t == num_steps - 1: 
+                    with torch.no_grad():
+                        all_params = torch.split(state, [int(state.shape[1]/2), int(state.shape[1]/2)], dim=-1)
+                        diff_graphs(all_params[0].detach().cpu(), all_params[1].detach().cpu(), iterated = args.game.find("I") != -1, p1="MFOS", p2=args.opponent, name=name)
             
             M_means = (M_mean / num_steps).tolist()
             
