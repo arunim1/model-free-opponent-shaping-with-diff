@@ -31,10 +31,10 @@ if __name__ == "__main__":
     lr = 0.08 #0.002  # parameters for Adam optimizer
     betas = (0.9, 0.999)
 
-    max_episodes = 8 # 1024
-    batch_size = 64 # 4096
+    max_episodes = 512 # 1024
+    batch_size = 16 # 4096
     random_seed = None
-    num_steps = 400
+    num_steps = 1000
 
     save_freq = 250
     name = args.exp_name

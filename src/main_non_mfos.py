@@ -67,7 +67,7 @@ def worker(args_in):
         if i == num_steps - 1: # or i == num_steps/2: 
             last_params[0], last_r0, last_r1 = params, r0, r1
             split_params = torch.split(last_params[0], batch_size, dim=0) 
-            diff_graphs(split_params[0], split_params[1], iterated = game.find("I") != -1, p1=p1, p2=p2)
+            diff_graphs(split_params[0].cpu(), split_params[1].cpu(), iterated = game.find("I") != -1, p1=p1, p2=p2)
 
     stability_test = False
     if stability_test:
@@ -155,7 +155,7 @@ def main(n_neurons=4):
     torch.cuda.empty_cache()
 
     batch_size = 200 # 4096
-    num_steps = 2000 # 100
+    num_steps = 1000 # 100
     name = args.exp_name
 
     print(f"RUNNING NAME: {name}")
@@ -174,8 +174,8 @@ def main(n_neurons=4):
     diff_games = diff_oneshot + diff_iterated
     all_games = base_games + iterated + diff_oneshot + diff_iterated
     # all_games = diff_oneshot
-    p1s = ["NL"]#, "LOLA"]
-    p2s = ["NL"]#, "LOLA"]
+    p1s = ["NL", "LOLA"]
+    p2s = ["NL", "LOLA"]
     pairs = product(p1s, p2s)
     pairs = list(set(tuple(sorted(pair)) for pair in pairs))
 
@@ -205,7 +205,7 @@ def main(n_neurons=4):
                             adam = False 
                             tasks.append((game, nn_game, batch_size, num_steps, p1, p2, lr, asym, ccdr, adam, device, n_neurons))
 
-    with Pool(3) as pool:
+    with Pool(8) as pool:
         results = pool.map(worker, tasks)
         if not os.path.isdir(f"runs/{name}"):
             os.mkdir(f"runs/{name}")
@@ -230,4 +230,4 @@ def main(n_neurons=4):
     # subprocess.run(command, capture_output=False, text=True)
 
 if __name__ == "__main__":
-    main(3)
+    main(8)

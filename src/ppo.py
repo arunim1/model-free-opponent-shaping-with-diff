@@ -24,7 +24,7 @@ class Memory:
         del self.rewards[:]
 
 
-class ActorCritic(nn.Module):
+class ActorCritic(nn.Module): # TODO ARUNIM try making the actor and critic more complex if NL learns but MFOS doesnt.
     def __init__(self, state_dim, action_dim):
         super(ActorCritic, self).__init__()
         self.actor = nn.Sequential(

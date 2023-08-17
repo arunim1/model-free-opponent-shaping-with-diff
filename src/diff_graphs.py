@@ -19,7 +19,7 @@ def main(th_0, th_1, upper_bound=1.0, iterated=False, p1=None, p2=None, name="te
     upper_bound = torch.tensor(upper_bound).to(device)
 
     # Generate an array of inputs within the range [0, 1].
-    diff_inputs = (torch.rand(100) * upper_bound).unsqueeze(1).unsqueeze(1).to(device)
+    diff_inputs = (torch.rand(100).to(device) * upper_bound).unsqueeze(1).unsqueeze(1).to(device)
     
     # inv sigmoid of diff inputs:
     # diff_inputs = torch.log(diff_inputs / (1 - diff_inputs))
@@ -86,11 +86,11 @@ def main(th_0, th_1, upper_bound=1.0, iterated=False, p1=None, p2=None, name="te
         plt.scatter(diff_inputs.squeeze(), p_1.mean(dim=0).squeeze(), label=f"{p1}")
         plt.scatter(diff_inputs.squeeze(), p_2.mean(dim=0).squeeze(), label=f"{p2}")
         plt.legend()
-        #save fig to filename, account for if no folder exists
-        # if not os.path.exists(f"images/{name}"):
-        #     os.makedirs(f"images/{name}")
-        # plt.savefig(f"images/{name}/diff_graph{torch.rand(1)}.png")
-        plt.show()
+        # save fig to filename, account for if no folder exists
+        if not os.path.exists(f"images/{name}"):
+            os.makedirs(f"images/{name}")
+        plt.savefig(f"images/{name}/diff_graph{torch.rand(1)}.png")
+        # plt.show()
         diff_output = torch.mean(torch.abs(p_1 - p_2), dim=1)
 
     return diff_output

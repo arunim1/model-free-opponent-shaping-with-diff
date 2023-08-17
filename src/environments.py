@@ -15,7 +15,7 @@ global n_params_5
 global n_params_1
 global n_neurons_in 
 
-n_neurons_in = 3
+n_neurons_in = 8
 n_params_5 = 2*(n_neurons_in**2) + 9*n_neurons_in + 5
 n_params_1 = 2*(n_neurons_in**2) + 5*n_neurons_in + 1     
 
@@ -438,7 +438,7 @@ class MetaGames:
         if game.find("PD") != -1:
             d, self.game_batched = pd_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
             self.lr = 1
-            self.lr = 0.3162 if self.diff_game and self.nn_game else 1
+            # self.lr = 0.3162 if self.diff_game and self.nn_game else 1
         elif game.find("MP") != -1:
             d, self.game_batched = mp_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
             self.lr = 0.1
@@ -498,19 +498,19 @@ class MetaGames:
     def game_maybe_ccdr(self, th_ba, outer_th_ba=None):
         # th_ba = [self.inner_th_ba, outer_th_ba.detach()] equiv to th_ba = [self.p2_th_ba, self.p1_th_ba]
         l1_reg, l2_reg, M = self.game_batched(th_ba) # l2 is for p1 aka p1_th_ba, l1 is for p2 aka p2_th_ba
-        self.ccdr = False
+
         if self.ccdr: 
             th_CC1 = [outer_th_ba.detach(), outer_th_ba.detach()]
             th_CC2 = [self.inner_th_ba, self.inner_th_ba]
             if self.nn_game and self.diff_game:
                 list_of_tensors = []
                 for _ in range(self.b):
-                    tensor = torch.nn.init.xavier_normal_(torch.empty(1, self.d, requires_grad=True))-100
+                    tensor = torch.nn.init.xavier_normal_(torch.empty(1, self.d, requires_grad=True))
                     list_of_tensors.append(tensor)
                 th_DR1 = [self.inner_th_ba, torch.cat(list_of_tensors, dim=0).to(device)]
                 list_of_tensors = []
                 for _ in range(self.b):
-                    tensor = torch.nn.init.xavier_normal_(torch.empty(1, self.d, requires_grad=True))-100
+                    tensor = torch.nn.init.xavier_normal_(torch.empty(1, self.d, requires_grad=True))
                     list_of_tensors.append(tensor)
                 th_DR2 = [torch.cat(list_of_tensors, dim=0).to(device), outer_th_ba.detach()]
 
@@ -523,8 +523,9 @@ class MetaGames:
             l1_CC2, _, _ = self.game_batched(th_CC2)
             l1_DR1, _, _ = self.game_batched(th_DR1)
             _, l2_DR2, _ = self.game_batched(th_DR2)
-            l1 = (l1_reg + l1_CC2 + l1_DR1)/2 - l1_reg/2
-            l2 = (l2_reg + l2_CC1 + l2_DR2)/2 - l2_reg/2 
+
+            l1 = (l1_reg + 1.26 * l1_CC2 + 1.9 * l1_DR1)/2 - l1_reg/2
+            l2 = (l2_reg + 1.26 * l2_CC1 + 1.9 * l2_DR2)/2 - l2_reg/2
             # l1 = (l1_CC2 + l1_DR1)/2
             # l2 = (l2_CC1 + l2_DR2)/2
         else:
@@ -850,8 +851,8 @@ class NonMfosMetaGames:
             l1_DR1, _, _ = self.game_batched(th_DR1)
             _, l2_DR2, _ = self.game_batched(th_DR2)
 
-            l1 = (l1_reg + 1.19 * l1_CC2 + 1.9 * l1_DR1)/2 - l1_reg/2
-            l2 = (l2_reg + 1.19 * l2_CC1 + 1.9 * l2_DR2)/2 - l2_reg/2
+            l1 = (l1_reg + 1.26 * l1_CC2 + 1.9 * l1_DR1)/2 - l1_reg/2
+            l2 = (l2_reg + 1.26 * l2_CC1 + 1.9 * l2_DR2)/2 - l2_reg/2
         else:
             l1, l2 = l1_reg, l2_reg
 
