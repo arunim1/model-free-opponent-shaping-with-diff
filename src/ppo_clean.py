@@ -2,10 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import MultivariateNormal
-from torch.cuda.amp import autocast, GradScaler
-
-torch.set_default_dtype(torch.float16)
-
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -24,32 +20,20 @@ class Memory:
         del self.rewards[:]
 
 
-class ActorCritic(nn.Module): # TODO ARUNIM try making the actor and critic more complex if NL learns but MFOS doesnt.
+class ActorCritic(nn.Module):
     def __init__(self, state_dim, action_dim):
         super(ActorCritic, self).__init__()
         self.actor = nn.Sequential(
-            nn.Linear(state_dim, 2048),
-            # nn.Tanh(),
-            # nn.Linear(2048, 2048),
-            # nn.Tanh(),
-            # nn.Linear(2048, 2048),
-            # nn.Tanh(),
-            # nn.Linear(2048, 2048),
+            nn.Linear(state_dim, 256),
             nn.Tanh(),
-            nn.Linear(2048, action_dim * 2),
+            nn.Linear(256, action_dim * 2),
         )
 
         # critic
         self.critic = nn.Sequential(
-            nn.Linear(state_dim, 2048),
-            # nn.Tanh(),
-            # nn.Linear(2048, 2048),
-            # nn.Tanh(),
-            # nn.Linear(2048, 2048),
-            # nn.Tanh(),
-            # nn.Linear(2048, 2048),
+            nn.Linear(state_dim, 256),
             nn.Tanh(),
-            nn.Linear(2048, 1),
+            nn.Linear(256, 1),
         )
 
         self.action_dim = action_dim
@@ -61,17 +45,15 @@ class ActorCritic(nn.Module): # TODO ARUNIM try making the actor and critic more
     def act(self, state, memory):
         action_mean, action_var = torch.split(self.actor(state), self.action_dim, dim=-1)
         cov_mat = torch.diag_embed(F.softplus(action_var))
-        # scale_tril = torch.sqrt(torch.diag_embed(F.softplus(action_var))).to(device)
 
         dist = MultivariateNormal(action_mean, cov_mat)
-        # dist = MultivariateNormal(action_mean, scale_tril=scale_tril)
 
         action = dist.sample()
         action_logprob = dist.log_prob(action)
 
         memory.states.append(state)
         memory.actions.append(action)
-        memory.logprobs.append(action_logprob) 
+        memory.logprobs.append(action_logprob)
 
         return action.detach()
 
@@ -79,33 +61,29 @@ class ActorCritic(nn.Module): # TODO ARUNIM try making the actor and critic more
         with torch.no_grad():
             action_mean, action_var = torch.split(self.actor(state), self.action_dim, dim=-1)
             cov_mat = torch.diag_embed(F.softplus(action_var))
-            # scale_tril = torch.sqrt(torch.diag_embed(F.softplus(action_var))).to(device)
 
             dist = MultivariateNormal(action_mean, cov_mat)
-            # dist = MultivariateNormal(action_mean, scale_tril=scale_tril)
-            
             if mean:
                 action = action_mean
             else:
                 action = dist.sample()
+
         return action.detach()
 
     def evaluate(self, state, action):
         action_mean, action_var = torch.split(self.actor(state), self.action_dim, dim=-1)
         action_var = F.softplus(action_var)
-        #   action_var = self.action_var.expand_as(action_mean)
 
+        #         action_var = self.action_var.expand_as(action_mean)
         cov_mat = torch.diag_embed(action_var).to(device)
-        
-        # scale_tril = torch.sqrt(torch.diag_embed(action_var)).to(device)
 
         dist = MultivariateNormal(action_mean, cov_mat)
-        # dist = MultivariateNormal(action_mean, scale_tril=scale_tril)
 
-        action_logprobs = dist.log_prob(action) 
-        dist_entropy = dist.entropy() 
-        state_value = self.critic(state) 
-        
+        action_logprobs = dist.log_prob(action)
+        dist_entropy = dist.entropy()
+
+        state_value = self.critic(state)
+
         return action_logprobs, torch.squeeze(state_value), dist_entropy
 
 
@@ -131,11 +109,9 @@ class PPO:
         return self.policy_old.act(state, memory).cpu().data.numpy().flatten()
 
     def update(self, memory):
-        scaler = GradScaler()
         # Monte Carlo estimate of rewards:
         rewards = []
         discounted_reward = 0
-        
         for reward in reversed(memory.rewards):
             discounted_reward = reward + (self.gamma * discounted_reward)
             rewards.insert(0, discounted_reward)
@@ -149,28 +125,24 @@ class PPO:
         old_actions = torch.stack(memory.actions).detach()
         old_logprobs = torch.stack(memory.logprobs).detach()
 
-        # Optimize policy for K epochs: 
+        # Optimize policy for K epochs:
         for _ in range(self.K_epochs):
-            with autocast():
-                # Evaluating old actions and values: 
-                logprobs, state_values, dist_entropy = self.policy.evaluate(old_states, old_actions)
+            # Evaluating old actions and values :
+            logprobs, state_values, dist_entropy = self.policy.evaluate(old_states, old_actions)
 
-                # Finding the ratio (pi_theta / pi_theta__old): 
-                ratios = torch.exp(logprobs - old_logprobs.detach())
+            # Finding the ratio (pi_theta / pi_theta__old):
+            ratios = torch.exp(logprobs - old_logprobs.detach())
 
-                # Finding Surrogate Loss: 
-                advantages = rewards - state_values.detach() 
-                surr1 = ratios * advantages 
-                surr2 = torch.clamp(ratios, 1 - self.eps_clip, 1 + self.eps_clip) * advantages
-                loss = -torch.min(surr1, surr2) + 0.5 * self.MseLoss(state_values, rewards) - self.entropy_bonus * dist_entropy
+            # Finding Surrogate Loss:
+            advantages = rewards - state_values.detach()
+            surr1 = ratios * advantages
+            surr2 = torch.clamp(ratios, 1 - self.eps_clip, 1 + self.eps_clip) * advantages
+            loss = -torch.min(surr1, surr2) + 0.5 * self.MseLoss(state_values, rewards) - self.entropy_bonus * dist_entropy
 
             # take gradient step
             self.optimizer.zero_grad()
-            scaler.scale(loss.mean()).backward()
-            scaler.step(self.optimizer)
-            scaler.update()
-            # loss.mean().backward()
-            # self.optimizer.step()
+            loss.mean().backward()
+            self.optimizer.step()
 
         # Copy new weights into old policy:
         self.policy_old.load_state_dict(self.policy.state_dict())

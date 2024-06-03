@@ -1,5 +1,5 @@
 import torch
-from ppo import PPO, Memory
+from ppo_clean import PPO, Memory
 from environments import MetaGames
 import os
 import argparse
@@ -18,6 +18,7 @@ parser.add_argument("--checkpoint", type=str, default="")
 parser.add_argument("--mamaml-id", type=int, default=0)
 parser.add_argument("--nn-game", action="store_true", default=False)
 parser.add_argument("--ccdr", action="store_true", default=False)
+parser.add_argument("--pwlinear", action="store_true", default=False)
 args = parser.parse_args()
 
 
@@ -28,13 +29,18 @@ if __name__ == "__main__":
     eps_clip = 0.2  # clip parameter for PPO
     gamma = 0.99  # discount factor
 
-    lr = 0.08 #0.002  # parameters for Adam optimizer
+    lr = 0.002 #0.002  # parameters for Adam optimizer
     betas = (0.9, 0.999)
 
-    max_episodes = 512 # 1024
-    batch_size = 16 # 4096
+    # max_episodes = 512 # 1024
+    # batch_size = 256
+    # random_seed = None
+    # num_steps = 300 
+
+    max_episodes = 256
+    batch_size = 4096
     random_seed = None
-    num_steps = 1000
+    num_steps = 200
 
     save_freq = 250
     name = args.exp_name
@@ -48,10 +54,11 @@ if __name__ == "__main__":
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu" if torch.backends.mps.is_available() else "cpu") # type: ignore
     nn_game = args.nn_game
     ccdr = args.ccdr 
+    pwlinear = args.pwlinear
     #############################################
 
     # creating environment
-    env = MetaGames(batch_size, opponent=args.opponent, game=args.game, mmapg_id=args.mamaml_id, nn_game=nn_game, ccdr=ccdr)
+    env = MetaGames(batch_size, opponent=args.opponent, game=args.game, mmapg_id=args.mamaml_id, nn_game=nn_game, pwlinear=pwlinear, ccdr=ccdr, n_neurons=10)
 
     action_dim = env.d
     state_dim = env.d * 2
@@ -100,8 +107,8 @@ if __name__ == "__main__":
             rewards_2 = []
             
             M_mean = torch.zeros(4).to(device)
-
-            for t in range(num_steps): # inner
+            pbar = tqdm(range(num_steps), desc="Inner: ")
+            for t in pbar: # inner
 
                 # Running policy_old:
                 action = ppo.policy_old.act(state, memory)
@@ -118,7 +125,7 @@ if __name__ == "__main__":
                 M_mean += M.detach().mean(dim=0).squeeze() # has shape (4,)
                 all_Ms.append(M_1)
 
-                if not nn_game:
+                if not (nn_game or pwlinear):
                     if args.game.find("I") != -1: # iterated games 
                         # params_1 = state[:batch_size, :] # has size batch_size x 10, so we need to split it
                         params_1 = torch.split(state, [5, 5], dim=-1)[1] # second half of state = opponent
@@ -130,14 +137,16 @@ if __name__ == "__main__":
                 rewards_1.append(reward.mean(dim=0).squeeze().tolist()) # MFOS reward
                 rewards_2.append(info.mean(dim=0).squeeze().tolist()) # opponent rewardarc
 
-                if t == num_steps - 1: 
+                if t == num_steps - 1 and pwlinear: 
                     with torch.no_grad():
                         all_params = torch.split(state, [int(state.shape[1]/2), int(state.shape[1]/2)], dim=-1)
-                        diff_graphs(all_params[0].detach().cpu(), all_params[1].detach().cpu(), iterated = args.game.find("I") != -1, p1="MFOS", p2=args.opponent, name=name)
+                        diff_graphs(all_params[0].detach().cpu(), all_params[1].detach().cpu(), iterated = args.game.find("I") != -1, p1="MFOS", p2=args.opponent, name=f"{name}/MFOS{args.opponent}_{args.game}_{ccdr}")
+
+                pbar.set_description(f"r0: {reward.detach().mean().item():.2f}, r1: {info.detach().mean().item():.2f}")
             
             M_means = (M_mean / num_steps).tolist()
             
-            if not nn_game:
+            if not (nn_game or pwlinear):
                 if args.game.find("I") != -1: # iterated games
                     split_params = torch.split(state, [5, 5], dim=-1)
                 else: 
@@ -156,7 +165,8 @@ if __name__ == "__main__":
             })
         else: 
             # M_mean = torch.zeros(4).to(device)
-            for t in tqdm(range(num_steps)): # inner
+            pbar = tqdm(range(num_steps), desc="Inner: ")
+            for t in pbar: # inner
                 # Running policy_old:
                 action = ppo.policy_old.act(state, memory)
                 state, reward, info, M = env.step(action)
@@ -166,6 +176,8 @@ if __name__ == "__main__":
                 running_reward += reward.squeeze(-1)
                 running_opp_reward += info.squeeze(-1)
                 last_reward = reward.squeeze(-1)
+                # pbar.set_description(f"r0: {r0.detach().mean().item():.2f}, r1: {r1.detach().mean().item():.2f}")
+                pbar.set_description(f"r0: {reward.detach().mean().item():.2f}, r1: {info.detach().mean().item():.2f}")
             # M_means = (M_mean / num_steps).tolist()
     
 

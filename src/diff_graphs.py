@@ -2,10 +2,11 @@ import matplotlib.pyplot as plt
 import torch 
 import math
 import os
+import numpy as np
 
 device = torch.device("cpu" if torch.cuda.is_available() else "cpu" if torch.backends.mps.is_available() else "cpu") # type: ignore
 
-def main(th_0, th_1, upper_bound=1.0, iterated=False, p1=None, p2=None, name="test"):
+def nn_main(th_0, th_1, upper_bound=1.0, iterated=False, p1=None, p2=None, name="test"):
     # output = torch.sum(torch.abs(th_0 - th_1), dim=-1, keepdim=True)
     # output = torch.norm(th_0 - th_1, dim=-1, keepdim=True)
     """
@@ -94,6 +95,81 @@ def main(th_0, th_1, upper_bound=1.0, iterated=False, p1=None, p2=None, name="te
         diff_output = torch.mean(torch.abs(p_1 - p_2), dim=1)
 
     return diff_output
+
+
+def main(th_0, th_1, upper_bound=1.0, iterated=False, p1=None, p2=None, name="test"):
+    bs = th_0.shape[0]
+    n_params = th_0.shape[1]
+    
+    def f(th, input):
+        linspace = torch.linspace(0, 1, n_params).to(device)
+        # Compute sigmoid of th[0]
+        probs_1 = torch.sigmoid(th)
+        
+        # Expand input dimensions to perform operations
+        expanded_input = input.unsqueeze(-1)
+        
+        # Compute absolute difference between input and linspace
+        diffs = torch.abs(expanded_input - linspace)
+        
+        # Get indices of the two smallest differences
+        _, indices = diffs.topk(2, dim=-1, largest=False)
+        
+        # Interpolate between the two closest values
+        lower_indices, upper_indices = indices[..., 0].unsqueeze(-1), indices[..., 1].unsqueeze(-1)
+        lower_values, upper_values = probs_1.gather(1, lower_indices), probs_1.gather(1, upper_indices)
+        
+        lower_diffs, upper_diffs = diffs.gather(1, lower_indices), diffs.gather(1, upper_indices)
+        
+        # Compute weights for interpolation based on inverse of differences
+        lower_weight = 1 - lower_diffs / (lower_diffs + upper_diffs)
+        upper_weight = 1 - lower_weight
+        
+        # Interpolate
+        interpolated_values = lower_weight * lower_values + upper_weight * upper_values
+        
+        return interpolated_values
+    
+    diff_inputs = []
+    p_1_values = []
+    p_2_values = []
+    
+    for _ in range(100):
+        input1 = torch.rand(1).to(device) * upper_bound
+        # repeat input to make it have shape: (bs)
+        input = input1.repeat(bs)
+        diff_inputs.append(input1)
+        p_1_values.append(f(th_0, input))
+        p_2_values.append(f(th_1, input))
+
+    # Stacking the values along a new dimension
+    p_1 = torch.stack(p_1_values, dim=1)
+    p_2 = torch.stack(p_2_values, dim=1)
+    diff_inputs = torch.stack(diff_inputs, dim=1)
+
+    # Convert everything to numpy for easier sorting
+    diff_inputs_np = diff_inputs.squeeze().cpu().numpy()
+    p_1_np = p_1.mean(dim=0).squeeze().cpu().numpy()
+    p_2_np = p_2.mean(dim=0).squeeze().cpu().numpy()
+
+    # Sort them
+    sorted_indices = np.argsort(diff_inputs_np)
+    diff_inputs_sorted = diff_inputs_np[sorted_indices]
+    p_1_sorted = p_1_np[sorted_indices]
+    p_2_sorted = p_2_np[sorted_indices]
+
+    # Plotting
+    plt.clf()
+    plt.ylim(-0.05, 1.05)
+    plt.xlim(-0.05, 1.05)
+    plt.plot(diff_inputs_sorted, p_1_sorted, label=f"{p1}")
+    plt.plot(diff_inputs_sorted, p_2_sorted, '--', label=f"{p2}")
+    plt.legend()
+    if not os.path.exists(f"images/{name}"):
+        os.makedirs(f"images/{name}")
+    plt.savefig(f"images/{name}/diff_graph{torch.rand(1)}.png")
+    
+    return None
 
 
 if __name__ == "__main__":

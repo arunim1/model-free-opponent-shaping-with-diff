@@ -1,5 +1,5 @@
 import torch
-from ppo import PPO, Memory
+from ppo_clean import PPO, Memory
 from environments import MetaGames
 import os
 import argparse

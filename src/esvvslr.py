@@ -43,8 +43,8 @@ def plot_esv(p1, p2, all_Ms, game, filename, lrs, ax=None, timestep=None, M_mean
         ax.plot(lrs, all_Ms[:,i], label=f'{state}')
 
     ax.set_xticks(lrs)
-    ax.set_xscale('log')
-    ax.set_xlabel('Learning Rate')
+    # ax.set_xscale('log')
+    ax.set_xlabel('CCDR weight')
     ax.set_ylabel('Expected State Visitation')
 
     # Get maximum row sum
@@ -55,7 +55,7 @@ def plot_esv(p1, p2, all_Ms, game, filename, lrs, ax=None, timestep=None, M_mean
     ax.set_ylim(-offset, max_row_sum + offset)
     ax.legend()
 
-    ax.set_title(f'{p1} vs. {p2}: {game} Average Expected State Visitation vs. Learning Rate')
+    ax.set_title(f'{p1} vs. {p2}: {game} Average Expected State Visitation vs. CCDR weight')
     if timestep is not None:
         ax.set_title(f'Timestep: {timestep}')
     filename = filename.replace("/", "_")

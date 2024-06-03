@@ -15,7 +15,7 @@ global n_params_5
 global n_params_1
 global n_neurons_in 
 
-n_neurons_in = 8
+n_neurons_in = 2
 n_params_5 = 2*(n_neurons_in**2) + 9*n_neurons_in + 5
 n_params_1 = 2*(n_neurons_in**2) + 5*n_neurons_in + 1     
 
@@ -126,8 +126,218 @@ def diff_nn(th_0, th_1, upper_bound=1.0, iterated=False):
         # print(f"diff_output = {diff_output}")
         return diff_output
 
+def diff_fxn(th_0, th_1, upper_bound=1.0, iterated=False):
+    bs = th_0.shape[0]
+    n_params = th_0.shape[1]
+    
+    def f(th, input):
+        linspace = torch.linspace(0, 1, n_params).to(device)
+        # Compute sigmoid of th[0]
+        probs_1 = torch.sigmoid(th)
+        
+        # Expand input dimensions to perform operations
+        expanded_input = input.unsqueeze(-1)
+        
+        # Compute absolute difference between input and linspace
+        diffs = torch.abs(expanded_input - linspace)
+        
+        # Get indices of the two smallest differences
+        _, indices = diffs.topk(2, dim=-1, largest=False)
+        
+        # Interpolate between the two closest values
+        lower_indices, upper_indices = indices[..., 0].unsqueeze(-1), indices[..., 1].unsqueeze(-1)
+        lower_values, upper_values = probs_1.gather(1, lower_indices), probs_1.gather(1, upper_indices)
+        
+        lower_diffs, upper_diffs = diffs.gather(1, lower_indices), diffs.gather(1, upper_indices)
+        
+        # Compute weights for interpolation based on inverse of differences
+        lower_weight = 1 - lower_diffs / (lower_diffs + upper_diffs)
+        upper_weight = 1 - lower_weight
+        
+        # Interpolate
+        interpolated_values = lower_weight * lower_values + upper_weight * upper_values
+        
+        return interpolated_values.squeeze(-1)
+    
+    p_1_values = []
+    p_2_values = []
+    
+    for _ in range(100):
+        input = torch.rand(bs).to(device) * upper_bound
+        p_1_values.append(f(th_0, input))
+        p_2_values.append(f(th_1, input))
+
+    # Stacking the values along a new dimension
+    p_1 = torch.stack(p_1_values, dim=1)
+    p_2 = torch.stack(p_2_values, dim=1)
+
+    return torch.mean(torch.abs(p_1 - p_2), dim=1)  # size is (bs, 1)
+
+    # for _ in range(100):
+    #     input = torch.rand(bs, 1).to(device) * upper_bound
+    #     # TODO 
+
+    # p_1 = f(th_0, input) # size is (bs, 100, 1) 
+    # p_2 = f(th_1, input)
+    # return torch.mean(torch.abs(p_1 - p_2), dim=1) # size is (bs, 1)
+
+
+def def_Ls_fxn(p_m_1, p_m_2, bs, gamma_inner=0.96, iterated=False, diff_game=False): 
+    # instead of using a neural network, we take the parameters to represent p(c) at a variety of inputs and then interpolate between them
+    
+    def Ls(th):
+        th[0] = th[0].clone().to(device) # really not quite sure why this is necessary but it is.
+        th[1] = th[1].clone().to(device)
+
+        if diff_game:
+            bs = th[0].shape[0]
+            n_params = th[0].shape[1]
+
+            linspace = torch.linspace(0, 1, n_params).to(device)
+            def f(th, input):
+                # Compute sigmoid of th[0]
+                probs_1 = torch.sigmoid(th)
+                
+                # Expand input dimensions to perform operations
+                expanded_input = input.unsqueeze(-1)
+                
+                # Compute absolute difference between input and linspace
+                diffs = torch.abs(expanded_input - linspace)
+                
+                # Get indices of the two smallest differences
+                _, indices = diffs.topk(2, dim=-1, largest=False)
+                
+                # Interpolate between the two closest values
+                lower_indices, upper_indices = indices[..., 0].unsqueeze(-1), indices[..., 1].unsqueeze(-1)
+                lower_values, upper_values = probs_1.gather(1, lower_indices), probs_1.gather(1, upper_indices)
+                
+                lower_diffs, upper_diffs = diffs.gather(1, lower_indices), diffs.gather(1, upper_indices)
+                
+                # Compute weights for interpolation based on inverse of differences
+                lower_weight = 1 - lower_diffs / (lower_diffs + upper_diffs)
+                upper_weight = 1 - lower_weight
+                
+                # Interpolate
+                interpolated_values = lower_weight * lower_values + upper_weight * upper_values
+                 
+                output = interpolated_values
+                return output
+            
+            upper_bound = 0.2
+            diff = diff_fxn(th[0], th[1], upper_bound=upper_bound, iterated=iterated)
+            diff1 = diff + torch.rand_like(diff) * 0.1
+            diff2 = diff + torch.rand_like(diff) * 0.1
+
+            if iterated:
+                raise NotImplementedError
+            else:
+                p_1 = f(th[0], diff1)
+                p_2 = f(th[1], diff2)
+        else: 
+            if iterated: 
+                p_1_0, p_2_0 = torch.sigmoid(th[0][:, 0:1]), torch.sigmoid(th[1][:, 0:1])
+                p_1 = torch.reshape(torch.sigmoid(th[0][:, 1:5]), (bs, 4, 1))
+                p_2 = torch.reshape(torch.sigmoid(torch.cat([th[1][:, 1:2], th[1][:, 3:4], th[1][:, 2:3], th[1][:, 4:5]], dim=-1)), (bs, 4, 1))
+            else:
+                p_1, p_2 = torch.sigmoid(th[0]), torch.sigmoid(th[1])
+
+            
+        if iterated:
+            p = torch.cat([p_1_0 * p_2_0, p_1_0 * (1 - p_2_0), (1 - p_1_0) * p_2_0, (1 - p_1_0) * (1 - p_2_0)], dim=-1)
+            P = torch.cat([p_1 * p_2, p_1 * (1 - p_2), (1 - p_1) * p_2, (1 - p_1) * (1 - p_2)], dim=-1)
+            M = torch.matmul(p.unsqueeze(1), torch.inverse(torch.eye(4).to(device) - gamma_inner * P))
+            L_1 = -torch.matmul(M, torch.reshape(p_m_1, (bs, 4, 1))) # player 2's loss, since p2's params are th[0]
+            L_2 = -torch.matmul(M, torch.reshape(p_m_2, (bs, 4, 1))) # player 1's loss, since p1's params are th[1]
+            return [L_1.squeeze(-1), L_2.squeeze(-1), M]
+        else: 
+            x, y = torch.cat([p_1, 1 - p_1], dim=-1), torch.cat([p_2, 1 - p_2], dim=-1)
+            M = torch.bmm(x.view(bs, 2, 1), y.view(bs, 1, 2)).view(bs, 1, 4) 
+            L_1 = -torch.matmul(M, torch.reshape(p_m_1, (bs, 4, 1))) # same outputs as old version, but with M
+            L_2 = -torch.matmul(M, torch.reshape(p_m_2, (bs, 4, 1)))
+            return [L_1.squeeze(-1), L_2.squeeze(-1), M]
+
+    return Ls
+
 
 def def_Ls_NN(p_m_1, p_m_2, bs, gamma_inner=0.96, iterated=False, diff_game=False): # works for ~arbitrary number of params
+    def fake_Ls(th): # th is a list of two tensors, each of shape (bs, params) for iterated games 
+        th[0] = th[0].clone().to(device) # really not quite sure why this is necessary but it is. 
+        th[1] = th[1].clone().to(device)
+
+        if diff_game: 
+            def calculate_neurons(n_params):
+                # Coefficients for the quadratic equation
+                a = 2
+                b = 9 if iterated else 5
+                c = -(n_params - 5) if iterated else -(n_params - 1)
+                
+                # Calculate the discriminant
+                discriminant = b**2 - 4*a*c
+                
+                # If discriminant is negative, then no real solution exists
+                if discriminant < 0:
+                    return None
+                
+                # Calculate the two possible solutions using the quadratic formula
+                neuron1 = (-b + math.sqrt(discriminant)) / (2*a)
+                neuron2 = (-b - math.sqrt(discriminant)) / (2*a)
+                
+                # Return the positive solution as the number of neurons should be positive, and round it down.
+                return math.floor(max(neuron1, neuron2))
+
+            n_neurons = calculate_neurons(th[0].shape[1])
+
+            upper_bound = torch.tensor(1.0).to(device)
+
+            # Generate an array of inputs within the range [0, 1].
+            diff_inputs = (torch.rand(100).to(device) * upper_bound).unsqueeze(1).unsqueeze(1).to(device)
+            
+            # inv sigmoid of diff inputs:
+            # diff_inputs = torch.log(diff_inputs / (1 - diff_inputs))
+
+            # Repeat diff_inputs to make it have shape: (bs, 100, 1, 1)
+            diff_inputs_repeated = diff_inputs.repeat(bs, 1, 1, 1)
+
+            # desired outputs: inputs passed through \frac{\left(\cos\left(5x\right)+1\right)}{2}
+            desired_outputs = ((torch.cos(5 * diff_inputs_repeated) + 1) / 2).squeeze(-1)
+
+
+            W1_1, W1_2 = th[0][:, 0:n_neurons].unsqueeze(1).unsqueeze(-1), th[1][:, 0:n_neurons].unsqueeze(1).unsqueeze(-1)  # has size (bs, 1, n_neurons, 1)
+            b1_1, b1_2 = th[0][:, n_neurons:2*n_neurons].unsqueeze(1).unsqueeze(-1), th[1][:, n_neurons:2*n_neurons].unsqueeze(1).unsqueeze(-1)  # has size (bs, 1, n_neurons, 1)
+            W2_1, W2_2 = th[0][:, 2*n_neurons:2*n_neurons + n_neurons**2].reshape((bs, n_neurons, n_neurons)), th[1][:, 2*n_neurons:2*n_neurons + n_neurons**2].reshape((bs, n_neurons, n_neurons)) 
+            b2_1, b2_2 = th[0][:, 2*n_neurons + n_neurons**2:3*n_neurons + n_neurons**2], th[1][:, 2*n_neurons + n_neurons**2:3*n_neurons + n_neurons**2] 
+            W3_1, W3_2 = th[0][:, 3*n_neurons + n_neurons**2:3*n_neurons + 2*n_neurons**2].reshape((bs, n_neurons, n_neurons)), th[1][:, 3*n_neurons + n_neurons**2:3*n_neurons + 2*n_neurons**2].reshape((bs, n_neurons, n_neurons)) 
+            b3_1, b3_2 = th[0][:, 3*n_neurons + 2*n_neurons**2:4*n_neurons + 2*n_neurons**2], th[1][:, 3*n_neurons + 2*n_neurons**2:4*n_neurons + 2*n_neurons**2] 
+            
+            W4_1, W4_2 = th[0][:, 4*n_neurons + 2*n_neurons**2:5*n_neurons + 2*n_neurons**2].reshape((bs, n_neurons, 1)), th[1][:, 4*n_neurons + 2*n_neurons**2:5*n_neurons + 2*n_neurons**2].reshape((bs, n_neurons, 1)) 
+            b4_1, b4_2 = th[0][:, 5*n_neurons + 2*n_neurons**2:5*n_neurons + 2*n_neurons**2 + n_neurons], th[1][:, 5*n_neurons + 2*n_neurons**2:5*n_neurons + 2*n_neurons**2 + n_neurons] 
+            
+            x1_1, x1_2 = torch.relu(diff_inputs_repeated * W1_1 + b1_1), torch.relu(diff_inputs_repeated * W1_2 + b1_2)  # each has size (bs, 100, 40, 1)
+            x1_1_u, x1_2_u = x1_1.squeeze(-1), x1_2.squeeze(-1)  # each has size (bs, 1, 100, 40)
+            b2_1_u, b2_2_u = b2_1.unsqueeze(1), b2_2.unsqueeze(1)
+            x2_1, x2_2 = torch.relu(torch.matmul(x1_1_u, W2_1) + b2_1_u), torch.relu(torch.matmul(x1_2_u, W2_2) + b2_2_u)
+            x2_1_u, x2_2_u = x2_1.squeeze(1), x2_2.squeeze(1)  # each has size (bs, 100, 40)
+            b3_1_u, b3_2_u = b3_1.unsqueeze(1), b3_2.unsqueeze(1)
+            x3_1, x3_2 = torch.relu(torch.matmul(x2_1_u, W3_1) + b3_1_u), torch.relu(torch.matmul(x2_2_u, W3_2) + b3_2_u)
+            x3_1_u, x3_2_u = x3_1.squeeze(1), x3_2.squeeze(1)  # each has size (bs, 100, 40)
+            b4_1_u, b4_2_u = b4_1.unsqueeze(1), b4_2.unsqueeze(1)
+            x4_1, x4_2 = torch.matmul(x3_1_u, W4_1) + b4_1_u, torch.matmul(x3_2_u, W4_2) + b4_2_u
+
+            p_1, p_2 = torch.sigmoid(x4_1), torch.sigmoid(x4_2)
+
+            loss_1 = torch.mean(torch.abs(p_1 - desired_outputs), dim=(0,1,2)).squeeze()
+            loss_2 = torch.mean(torch.abs(p_2 - desired_outputs), dim=(0,1,2)).squeeze()
+
+            batch_loss_1 = torch.mean(torch.abs(p_1 - desired_outputs), dim=(1,2)).squeeze() + (torch.mean(th[0]) * torch.mean(th[1]))/1e9
+            batch_loss_2 = torch.mean(torch.abs(p_2 - desired_outputs), dim=(1,2)).squeeze() + (torch.mean(th[0]) * torch.mean(th[1]))/1e9
+            
+            batch_size = th[0].shape[0]
+
+            M = torch.ones((batch_size, 1, 4)).to(device) 
+
+            return [batch_loss_1, batch_loss_2, M]
+    
+    
     def Ls(th): # th is a list of two tensors, each of shape (bs, params) for iterated games 
         th[0] = th[0].clone().to(device) # really not quite sure why this is necessary but it is. 
         th[1] = th[1].clone().to(device)
@@ -223,7 +433,7 @@ def def_Ls_NN(p_m_1, p_m_2, bs, gamma_inner=0.96, iterated=False, diff_game=Fals
             L_2 = -torch.matmul(M, torch.reshape(p_m_2, (bs, 4, 1)))
             return [L_1.squeeze(-1), L_2.squeeze(-1), M]
     
-    return Ls
+    return fake_Ls
 
 
 def def_Ls_threshold_game(p_m_1, p_m_2, bs, gamma_inner=0.96, iterated=False, diff_game=False):
@@ -263,7 +473,7 @@ def def_Ls_threshold_game(p_m_1, p_m_2, bs, gamma_inner=0.96, iterated=False, di
                 p_2 = torch.relu(t_2 - diff)
             else:
                 p_1, p_2 = torch.sigmoid(th[0]), torch.sigmoid(th[1])
-            
+
             x, y = torch.cat([p_1, 1 - p_1], dim=-1), torch.cat([p_2, 1 - p_2], dim=-1)
             M = torch.bmm(x.view(bs, 2, 1), y.view(bs, 1, 2)).view(bs, 1, 4)
             L_1 = -torch.matmul(M, torch.reshape(p_m_1, (bs, 4, 1))) # same as old version, but with M
@@ -352,13 +562,6 @@ def get_gradient(function, param):
     grad = torch.autograd.grad(function, param, create_graph=True, allow_unused=True)[0]
     return grad
 
-def get_batch_gradient(batch_loss, th):
-    identity = torch.eye(batch_loss.size(0)).diag().to(batch_loss.device)
-    # Compute the gradient for each sample in the batch
-    grad, = torch.autograd.grad(batch_loss, th, grad_outputs=identity, retain_graph=True)
-    
-    return grad
-
 def compute_best_response(outer_th_ba):
     batch_size = 1
     std = 0
@@ -413,7 +616,7 @@ def generate_mamaml(b, d, inner_env, game, inner_lr=1):
 
 
 class MetaGames:
-    def __init__(self, b, opponent="NL", game="IPD", mmapg_id=0, nn_game=False, ccdr=False):
+    def __init__(self, b, opponent="NL", game="IPD", mmapg_id=0, nn_game=False, pwlinear=False, ccdr=False, n_neurons=8, lr=1):
         """
         Opponent can be:
         NL = Naive Learner (gradient updates through environment).
@@ -430,10 +633,12 @@ class MetaGames:
         self.iterated = True if game.find("I") != -1 else False
         self.ccdr = ccdr
         self.nn_game = nn_game
+        self.pwlinear = pwlinear
         # self.adam = True
 
         global def_Ls 
-        def_Ls = def_Ls_NN if nn_game else def_Ls_threshold_game
+        # def_Ls = def_Ls_NN if nn_game else def_Ls_threshold_game
+        def_Ls = def_Ls_fxn if self.pwlinear and self.diff_game else def_Ls_NN if self.nn_game and self.diff_game else def_Ls_threshold_game
 
         if game.find("PD") != -1:
             d, self.game_batched = pd_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game)
@@ -454,10 +659,13 @@ class MetaGames:
         else:
             raise NotImplementedError
         
+        if lr is not None: self.lr = lr
+        
         self.std = 1
         self.d = d[0]
 
         if self.nn_game and self.diff_game: self.d = n_params_5 if self.iterated else n_params_1
+        if self.pwlinear and self.diff_game: self.d = n_neurons
 
         self.opponent = opponent
         if self.opponent == "MAMAML":
@@ -513,9 +721,6 @@ class MetaGames:
                     tensor = torch.nn.init.xavier_normal_(torch.empty(1, self.d, requires_grad=True))
                     list_of_tensors.append(tensor)
                 th_DR2 = [torch.cat(list_of_tensors, dim=0).to(device), outer_th_ba.detach()]
-
-                # th_DR1 = [self.inner_th_ba, torch.nn.init.xavier_normal_(torch.empty_like(outer_th_ba.detach())-100)]  
-                # th_DR2 = [torch.nn.init.xavier_normal_(torch.empty_like(self.inner_th_ba))-100, outer_th_ba.detach()]
             else:
                 th_DR1 = [self.inner_th_ba, torch.nn.init.normal_(torch.empty_like(outer_th_ba.detach()), std=self.std)]  
                 th_DR2 = [torch.nn.init.normal_(torch.empty_like(self.inner_th_ba), std=self.std), outer_th_ba.detach()]
@@ -524,8 +729,8 @@ class MetaGames:
             l1_DR1, _, _ = self.game_batched(th_DR1)
             _, l2_DR2, _ = self.game_batched(th_DR2)
 
-            l1 = (l1_reg + 1.26 * l1_CC2 + 1.9 * l1_DR1)/2 - l1_reg/2
-            l2 = (l2_reg + 1.26 * l2_CC1 + 1.9 * l2_DR2)/2 - l2_reg/2
+            l1 = (l1_reg + 1.26 * l1_CC2 + 1.9 * l1_DR1)/3 #2 - l1_reg/2
+            l2 = (l2_reg + 1.26 * l2_CC1 + 1.9 * l2_DR2)/3 #2 - l2_reg/2
             # l1 = (l1_CC2 + l1_DR1)/2
             # l2 = (l2_CC1 + l2_DR2)/2
         else:
@@ -571,7 +776,7 @@ class MetaGames:
         else:
             raise NotImplementedError
 
-        if self.nn_game and self.diff_game:
+        if (self.nn_game or self.pwlinear) and self.diff_game:
             if self.iterated:
                 return torch.cat((outer_th_ba, last_inner_th_ba), dim=-1).detach(), (-l2 * (1 - self.gamma_inner)).detach(), (-l1 * (1 - self.gamma_inner)).detach(), M
             else:
@@ -662,7 +867,7 @@ class SymmetricMetaGames:
 
 
 class NonMfosMetaGames:
-    def __init__(self, b, p1="NL", p2="NL", game="IPD", lr=None, mmapg_id=None, asym=None, nn_game=False, ccdr=False, adam=False, n_neurons=8):
+    def __init__(self, b, p1="NL", p2="NL", game="IPD", lr=None, mmapg_id=None, asym=None, nn_game=False, pwlinear=False, ccdr=False, adam=False, n_neurons=8):
         """
         Opponent can be:
         NL = Naive Learner (gradient updates through environment).
@@ -677,13 +882,15 @@ class NonMfosMetaGames:
         self.game = game
         self.ccdr = ccdr
         self.nn_game = nn_game
+        self.pwlinear = pwlinear
         self.adam = adam
 
         self.diff_game = True if game.find("diff") != -1 or game.find("Diff") != -1 else False
         self.iterated = True if game.find("I") != -1 else False
 
         global def_Ls 
-        def_Ls = def_Ls_NN if self.nn_game and self.diff_game else def_Ls_threshold_game
+        # def_Ls = def_Ls_NN if self.nn_game and self.diff_game else def_Ls_threshold_game
+        def_Ls = def_Ls_fxn if self.pwlinear and self.diff_game else def_Ls_NN if self.nn_game and self.diff_game else def_Ls_threshold_game
 
         if game.find("PD") != -1:
             d, self.game_batched = pd_batched(b, gamma_inner=self.gamma_inner, iterated=self.iterated, diff_game=self.diff_game, asym=asym)
@@ -707,15 +914,18 @@ class NonMfosMetaGames:
             raise NotImplementedError
 
         self.std = 1
-        if lr is not None:
-            # first testing if lr is a number or a list
-            if isinstance(lr, list):
-                if len(lr) == 2:
-                    self.lr = lr[0]
-                    self.lr_2 = lr[1]
-            else:
-                self.lr = lr
-                self.lr_2 = lr
+        self.lr_2 = 1
+        # if lr is not None:
+        #     # first testing if lr is a number or a list
+        #     if isinstance(lr, list):
+        #         if len(lr) == 2:
+        #             self.lr = lr[0]
+        #             self.lr_2 = lr[1]
+        #     else:
+        #         self.lr = lr
+        #         self.lr_2 = lr
+        
+        if lr is not None: self.ccdr_weight = lr
 
         self.d = d[0]
 
@@ -736,7 +946,10 @@ class NonMfosMetaGames:
         n_neurons_in = n_neurons
         n_params_5 = 2*(n_neurons_in**2) + 9*n_neurons_in + 5
         n_params_1 = 2*(n_neurons_in**2) + 5*n_neurons_in + 1 
+
+
         if self.nn_game and self.diff_game: self.d = n_params_5 if self.iterated else n_params_1
+        if self.pwlinear and self.diff_game: self.d = n_neurons
 
         self.init_th_ba = None
         if self.p1 == "MAMAML" or self.p2 == "MAMAML":
@@ -750,7 +963,7 @@ class NonMfosMetaGames:
             print(self.init_th_ba)
 
     def reset(self, info=False):
-        if self.nn_game and self.diff_game: 
+        if (self.nn_game) and self.diff_game: 
             # self.p1_th_ba = torch.nn.init.xavier_normal_(torch.empty((self.b, self.d), requires_grad=True)).to(device)
             list_of_tensors = []
             for _ in range(self.b):
@@ -828,7 +1041,7 @@ class NonMfosMetaGames:
         if self.ccdr: 
             th_CC1 = [self.p1_th_ba, self.p1_th_ba]
             th_CC2 = [self.p2_th_ba, self.p2_th_ba]
-            if self.nn_game and self.diff_game:
+            if (self.nn_game) and self.diff_game:
                 list_of_tensors = []
                 for _ in range(self.b):
                     tensor = torch.nn.init.xavier_normal_(torch.empty(1, self.d, requires_grad=True))
@@ -839,10 +1052,6 @@ class NonMfosMetaGames:
                     tensor = torch.nn.init.xavier_normal_(torch.empty(1, self.d, requires_grad=True))
                     list_of_tensors.append(tensor)
                 th_DR2 = [torch.cat(list_of_tensors, dim=0).to(device), self.p1_th_ba]
-                # th_DR1 = [self.p2_th_ba, torch.nn.init.xavier_normal_(torch.empty_like(self.p1_th_ba))]  
-                # th_DR2 = [torch.nn.init.xavier_normal_(torch.empty_like(self.p2_th_ba)), self.p1_th_ba]
-                # th_DR1 = [self.p2_th_ba, torch.zeros_like(self.p1_th_ba)-10]
-                # th_DR2 = [torch.zeros_like(self.p2_th_ba)-10, self.p1_th_ba]
             else:
                 th_DR1 = [self.p2_th_ba, torch.nn.init.normal_(torch.empty_like(self.p1_th_ba), std=self.std)]  
                 th_DR2 = [torch.nn.init.normal_(torch.empty_like(self.p2_th_ba), std=self.std), self.p1_th_ba]
@@ -851,15 +1060,15 @@ class NonMfosMetaGames:
             l1_DR1, _, _ = self.game_batched(th_DR1)
             _, l2_DR2, _ = self.game_batched(th_DR2)
 
-            l1 = (l1_reg + 1.26 * l1_CC2 + 1.9 * l1_DR1)/2 - l1_reg/2
-            l2 = (l2_reg + 1.26 * l2_CC1 + 1.9 * l2_DR2)/2 - l2_reg/2
+            ccdr_weight = self.ccdr_weight
+            l1 = (l1_reg + ccdr_weight * (1 * l1_CC2 + 1.5 * l1_DR1))/3 #2 - l1_reg/2
+            l2 = (l2_reg + ccdr_weight * (1 * l2_CC1 + 1.5 * l2_DR2))/3 #2 - l2_reg/2
         else:
             l1, l2 = l1_reg, l2_reg
 
         # UPDATE P1
         if self.p1 == "NL" or self.p1 == "MAMAML":
             grad = get_gradient(l2.sum(), self.p1_th_ba)
-            # grad = get_batch_gradient(l2.squeeze(), self.p1_th_ba)
             self.update(1, grad)
         elif self.p1 == "LOLA":
             losses = [l1, l2]
@@ -877,7 +1086,6 @@ class NonMfosMetaGames:
         # UPDATE P2
         if self.p2 == "NL" or self.p2 == "MAMAML":
             grad = get_gradient(l1.sum(), self.p2_th_ba)
-            # grad = get_batch_gradient(l1.squeeze(), self.p2_th_ba)
             self.update(2, grad)
         elif self.p2 == "LOLA":
             losses = [l1, l2]
@@ -892,7 +1100,7 @@ class NonMfosMetaGames:
         else:
             raise NotImplementedError
         
-        if self.nn_game and self.diff_game:
+        if (self.nn_game or self.pwlinear) and self.diff_game:
             if self.iterated:
                 return torch.cat([last_p1_th_ba, last_p2_th_ba]).detach(), (-l2 * (1 - self.gamma_inner)).detach(), (-l1 * (1 - self.gamma_inner)).detach(), M
             else:

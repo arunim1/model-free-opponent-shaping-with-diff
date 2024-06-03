@@ -23,10 +23,11 @@ args = parser.parse_args()
 
 
 def worker(args_in):
-    game, nn_game, batch_size, num_steps, p1, p2, lr, asym, ccdr, adam, device, n_neurons = args_in
+    name, game, nn_game, pwlinear, batch_size, num_steps, p1, p2, lr, asym, ccdr, adam, device, n_neurons = args_in
 
-    curr_nn_game = nn_game and game.find("diff") != -1  
-    env = NonMfosMetaGames(batch_size, p1=p1, p2=p2, game=game, lr=lr, asym=asym, nn_game=curr_nn_game, ccdr=ccdr, adam=adam, n_neurons=n_neurons)
+    curr_nn_game = nn_game and game.find("diff") != -1 
+    curr_pwlinear = pwlinear and game.find("diff") != -1 
+    env = NonMfosMetaGames(batch_size, p1=p1, p2=p2, game=game, lr=lr, asym=asym, nn_game=curr_nn_game, pwlinear=curr_pwlinear, ccdr=ccdr, adam=adam, n_neurons=n_neurons)
     state, _ = env.reset(True)
     split_params = torch.split(state, batch_size, dim=0) 
     # diff_graphs(split_params[0], split_params[1], iterated = game.find("I") != -1, p1=p1, p2=p2)
@@ -48,13 +49,13 @@ def worker(args_in):
         params, r0, r1, M = env.step() # _, r0, r1, M
         running_rew_0 += r0.squeeze(-1)
         running_rew_1 += r1.squeeze(-1)
-        
+    
         # just the first 5 runs of the batch
         M_1 = M[:5, :].detach().squeeze().tolist()
         all_Ms.append(M_1)
 
         M_mean += M.detach().mean(dim=0).squeeze()
-        
+    
         # just p1's params
         params_1 = params[:batch_size, :] 
         all_params_1.append(params_1[0,:].detach().tolist()) # just the first run of the batch
@@ -67,7 +68,7 @@ def worker(args_in):
         if i == num_steps - 1: # or i == num_steps/2: 
             last_params[0], last_r0, last_r1 = params, r0, r1
             split_params = torch.split(last_params[0], batch_size, dim=0) 
-            diff_graphs(split_params[0].cpu(), split_params[1].cpu(), iterated = game.find("I") != -1, p1=p1, p2=p2)
+            diff_graphs(split_params[0].cpu(), split_params[1].cpu(), iterated = game.find("I") != -1, p1=p1, p2=p2, name=f"{name}/{p1}v{p2}_{game}_{lr}_{ccdr}")
 
     stability_test = False
     if stability_test:
@@ -154,8 +155,8 @@ def worker(args_in):
 def main(n_neurons=4):
     torch.cuda.empty_cache()
 
-    batch_size = 200 # 4096
-    num_steps = 1000 # 100
+    batch_size = 512 # 4096
+    num_steps = 300 # 100
     name = args.exp_name
 
     print(f"RUNNING NAME: {name}")
@@ -183,27 +184,34 @@ def main(n_neurons=4):
     ccdrs = [False, True]
     nn_games = [True, False]
 
-    # lrs = np.logspace(-2, 1, num=20)
-    lrs = [0.3612]
+    lrs = np.logspace(-2, 1, num=20)
+    # lrs = [1,2]
     lrs = [1]
     asymmetries = [None]
+    ccdr_weights = np.linspace(0,4, num=20)
+    ccdr_weights = [4.0]
+    # ccdrs = [(True, ccdr_weights)]
     ccdrs = [True]
-    nn_games = [True]
+    nn_games = [False]
+    pwlinears = [True]
     
     # Alternative method: use multiprocessing
     multiprocessing.set_start_method('spawn')
 
     tasks = []
     for game in diff_oneshot: 
-        if game in diff_games: nn_games_2 = nn_games
-        else: nn_games_2 = [False] 
+        if game in diff_games: nn_games_2, pwlinears_2 = nn_games, pwlinears
+        else: nn_games_2, pwlinears_2 = [False], [False]
         for nn_game in nn_games_2: 
-            for ccdr in ccdrs: 
-                for asym in asymmetries: 
-                    for p1, p2 in pairs:
-                        for lr in lrs:
-                            adam = False 
-                            tasks.append((game, nn_game, batch_size, num_steps, p1, p2, lr, asym, ccdr, adam, device, n_neurons))
+            for pwlinear in pwlinears_2:
+                assert not (nn_game and pwlinear)
+                for ccdr in ccdrs: 
+                    for asym in asymmetries: 
+                        for p1, p2 in pairs:
+                            # for lr in lrs:
+                            for lr in ccdr_weights:
+                                adam = False 
+                                tasks.append((name, game, nn_game, pwlinear, batch_size, num_steps, p1, p2, lr, asym, ccdr, adam, device, n_neurons))
 
     with Pool(8) as pool:
         results = pool.map(worker, tasks)
@@ -214,7 +222,7 @@ def main(n_neurons=4):
 
     print("Running plot_bigtime.py with filename: ", name)
 
-    if len(lrs) > 1:
+    if len(lrs) > 1 or len(ccdr_weights) > 1:
         for lr in lrs:
             # plot_all(f'{name}_{lr}', caller="non_mfos")
             pass
@@ -225,9 +233,9 @@ def main(n_neurons=4):
         plot_all(name, caller="non_mfos")
 
     # command = ["gcloud", "compute", "instances", "stop", "instance-arunim", "--zone=us-east1-b"]
-
+    
     # print("Executing command:", " ".join(command))
     # subprocess.run(command, capture_output=False, text=True)
 
 if __name__ == "__main__":
-    main(8)
+    main(20)
