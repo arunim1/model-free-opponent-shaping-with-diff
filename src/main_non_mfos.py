@@ -1,4 +1,3 @@
-# %%
 import os
 import json
 import torch
@@ -6,13 +5,13 @@ import argparse
 from environments import NonMfosMetaGames
 import numpy as np
 import time
+from multiprocessing import Pool
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--exp-name", type=str, default="")
+parser.add_argument("--G", type=float, default=2)
 args = parser.parse_args()
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-# TODO: add logging (log every step) and plotting code (plot ESV vs. step and ESV vs. learning rate) to the existing code.
 
 
 def get_log(
@@ -100,11 +99,60 @@ def get_log(
     return log
 
 
+def run_simulation(params):
+    (
+        pms,
+        p1,
+        p2,
+        lr,
+        asym,
+        threshold,
+        pwlinear,
+        ccdr,
+        adam,
+        num_steps,
+        batch_size,
+        runs_to_track,
+        seed,
+    ) = params
+    return get_log(
+        pms,
+        p1,
+        p2,
+        lr,
+        asym,
+        threshold,
+        pwlinear,
+        ccdr,
+        adam,
+        num_steps,
+        batch_size,
+        runs_to_track,
+        seed,
+    )
+
+
+def get_params_tuple(log):
+    return (
+        log["p1"],
+        log["p2"],
+        log["lr"],
+        log["asym"],
+        log["threshold"],
+        log["pwlinear"],
+        log["ccdr"],
+        log["adam"],
+        log["num_steps"],
+        log["batch_size"],
+    )
+
+
 if __name__ == "__main__":
     batch_size = 8192
     n_runs_to_track = 20
     num_steps = 500  # 100
-    name = args.exp_name if args.exp_name != "" else "non_mfos_baseline_pd_lrs"
+    name = args.exp_name if args.exp_name != "" else "non_mfos_baseline_pd_lrs_multi"
+    G = args.G
 
     print(f"RUNNING NAME: {name}")
     if not os.path.isdir(name):
@@ -113,9 +161,8 @@ if __name__ == "__main__":
             json.dump(args.__dict__, f, indent=2)
 
     # prisoner's dilemma
-    pd_payoff_mat_1 = torch.Tensor([[-1, -3], [0, -2]]).to(device)
+    pd_payoff_mat_1 = torch.Tensor([[-1, -1 - G], [0, -G]]).to(device)
     pd_payoff_mat_2 = pd_payoff_mat_1.T
-    # pd_payoff_mat_2 = torch.zeros_like(pd_payoff_mat_1)
     pd = (pd_payoff_mat_1, pd_payoff_mat_2)
     pds = [pd]
 
@@ -138,9 +185,9 @@ if __name__ == "__main__":
     seeds = [42]
 
     assert n_runs_to_track <= batch_size
-    # randomly select a subset of runs to track
 
     results = []
+    param_list = []
     for pms in pds:
         for p1, p2 in player_combos:
             for lr in lrs:
@@ -155,31 +202,34 @@ if __name__ == "__main__":
                                         runs_to_track = np.random.choice(
                                             batch_size, n_runs_to_track, replace=False
                                         )
+                                        param_list.append(
+                                            (
+                                                pms,
+                                                p1,
+                                                p2,
+                                                lr,
+                                                asym,
+                                                threshold,
+                                                pwlinear,
+                                                ccdr,
+                                                adam,
+                                                num_steps,
+                                                batch_size,
+                                                runs_to_track,
+                                                seed,
+                                            )
+                                        )
 
-                                        start_time = time.time()
-                                        log = get_log(
-                                            pms,
-                                            p1,
-                                            p2,
-                                            lr,
-                                            asym,
-                                            threshold,
-                                            pwlinear,
-                                            ccdr,
-                                            adam,
-                                            num_steps,
-                                            batch_size,
-                                            runs_to_track,
-                                            seed,
-                                        )
-                                        results.append(log)
-                                        print(
-                                            f"Elapsed time: {time.time() - start_time}"
-                                        )
+    with Pool() as pool:
+        start_time = time.time()
+        results = pool.map(run_simulation, param_list)
+        print(f"Elapsed time: {time.time() - start_time}")
+
+    log_dict = {get_params_tuple(log): log for log in results}
+    ordered_results = [log_dict[tuple(params[1:11])] for params in param_list]
 
     with open(os.path.join(name, f"out.json"), "w") as f:
-        json.dump(results, f)
-
+        json.dump(ordered_results, f)
 
 """
 TODO: 
@@ -189,5 +239,3 @@ TODO:
         - Plot the average ESV (averaging over steps) vs. learning rate for each game. 
         
 """
-
-# %%
