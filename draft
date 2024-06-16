@@ -1,0 +1,95 @@
+Title 
+Abstract
+
+Lorem ipsum
+
+Introduction 
+As AI systems interact more and more with the world at large, it can also be expected that different systems will interact with each other. Specifically, given the rise in agentic AI systems, we can expect there to be interactions between different systems which are either fundamentally different or at least tasked with pursuing different goals. In general, we must ensure that these interactions do not lead to unstable dynamics, and that when possible, mutually beneficial, cooperative solutions are reached. Other work has similarly brought these concerns into light (Open Problems in Cooperative AI). 
+
+In this paper, we build on previous work on similarity-based cooperation (), which creates and provides larger basins of attraction towards cooperative equilibria by proposing diff-meta games, and opponent shaping (), a technique in multi-agent RL which creates powerful agents that take into account their co-player’s responses. We evaluate the combination of these lines of research to achieve cooperative outcomes in normal-form games such as the one-shot prisoner’s dilemma, and empirically show the generality with which opponent-shaping algorithms are able to find the cooperative solution created by diff-meta games. 
+
+In other words, in this paper we experimentally verify that similarity-based cooperation leads to convergence, and introduce novel tests showing that opponent shaping algorithms can learn appropriate structures of policies to play in diff-meta games. 
+
+Related work 
+Similarity-based cooperation 
+[more thorough description of the motivation for SBC, diff-meta games, notation, existing results, etc.] ()
+
+
+Opponent Shaping 
+[more thorough description of work in OS, evaluations, etc.] ()
+
+
+Comparison with existing approaches
+Existing non OS approaches to cooperation, see melting pot challenges or something related, probably. 
+(many, probably)
+
+Methods / experiments 
+Our evaluation pitted number of “learners” or agents with different update rules against each other, in order of complexity: 
+
+
+Naive Learners, which follow the update rule: $\[ \]$
+
+LOLA, which follows the update rule: $\[ \]$
+
+And MFOS, which parameterizes its update rule with a neural network, and learns to improve its update rule, and plays accordingly. Its update rule is thus updated according to the following PPO objective: $\[ \]$
+
+The implementation of these agents was taken from the MFOS repository. 
+
+We performed experiments varying: 
+(1) the reward gained for defecting, $G$, in the notation of diff-meta games above, in additively decomposable normal form games, 
+(2) the learning rate, to evaluate the stability of these algorithms, 
+(3) the annealing method required for M-FOS vs. M-FOS to converge in simple games, and 
+(4) the form of the policy they are able to play: what we will term ‘threshold games’ vs. ‘piecewise linear’ games. 
+
+To evaluate their performance on ‘threshold games’, where the policy must be structured like a threshold, we simply term each agent’s output (formerly probability of cooperation) to become their chosen threshold, and alter the reward calculation accordingly. 
+
+To evaluate their performance on ‘piecewise linear games’, we expand the output to instead be (for example) 11 values, which correspond to probabilities of cooperation for diff-scores of 0, 0.1, … 0.9, 1, and interpolate between these probabilities. 
+
+There are more general ways to define the functions that dictate a probability of cooperation given an input diff-value, such as neural network parameters, but this would require that each parameter be an “action” taken by the learned policy in M-FOS, which substantially hinders performance. 
+
+Our evaluation generally considers a training run to be more successful (indicating more cooperation) as the expected state visitation of cooperate-cooperate increases, as measured at the end of a training run. 
+
+Results 
+To set a baseline, without the diff-meta game, we naturally see convergence to defect-defect and no cooperation for all player combinations. [plots of NL, LOLA, M-FOS round-robin + self-play, and MFOS self-play with annealing.]
+Threshold games
+Within threshold games, we can examine the improvement that opponent shaping methods offer by setting a baseline of NL vs. NL. The most cooperative result in this baseline setting is the following: [plot of PD + adam + CCDR @ best lr] 
+
+We see that LOLA converges to nearly the same results because (math indicating second order correction when using ReLU is 0), but even for other activations it seems to be ~ basically the same. 
+
+But both of these results are highly sensitive to learning rate, the inclusion of CCDR loss, and the choice of optimizer (Adam), as seen in the figure below and thus not robust. 
+
+
+[Figures demonstrating convergence to DD for most learning rates, 
+combination of without CCDR: 
+
+And without Adam: 
+]
+
+MFOS, on the other hand, [todo, it turns out I can only find bad results at the moment, but will do a bunch more comprehensive runs soon]
+
+Piecewise-linear games
+Again, we can examine NL vs. NL, and for specific hyperparameters and with CCDR, we find that it can discover threshold policies, albeit with low thresholds. Still, this provides evidence that the algorithms can still find cooperation in this larger space of possible policies. We can similarly examine the robustness to learning rate, and see that piecewise linear results are much less sensitive to differences in learning rates. 
+
+With LOLA, we can also see convergence to reasonable threshold-like policies, and can see the difference, as the agents ‘discover’ threshold policies, and find cooperate-cooperate equilibria along with this discovery. 
+
+Finally, we evaluated this on MFOS, and we find [todo, similarly need to do comprehensive runs]
+
+Discussion
+While threshold games are the most natural approach for diff-meta games which allow for similarity-based cooperation in relatively simple normal-form games, it bodes well that this form of policy can be discovered by simple gradient and opponent shaping methods, and that these algorithms are able to find cooperative solutions when the structure of the solution is not given directly. Further, the structure of diff meta games appear to, in return, improve the convergence of M-FOS in self play, removing the need for an annealing process.
+
+We also find that piecewise linear strategies lend themselves to more robust convergence, not as dependent on learning rate and the addition of momentum. 
+
+
+Conclusion 
+[summary] 
+
+A core limitation is the lack of scalability of the piecewise linear structure to 
+
+This lays the groundwork for future work to explore the application of other RL methods 
+
+
+Appendices
+Varying G 
+Core evaluation: P(CC) for G=1 through G=4 for both threshold and piecewise linear for all players. 
+Non-PD Experiments
+Same evaluations for stag hunt and chicken. 

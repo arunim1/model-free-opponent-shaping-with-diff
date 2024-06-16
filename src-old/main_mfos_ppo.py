@@ -1,10 +1,10 @@
 import torch
-from ppo import PPO, Memory
+from ppo_clean import PPO, Memory
 from environments import MetaGames
 import os
 import argparse
 import json
-
+from tqdm import tqdm
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--game", type=str, required=True)
@@ -29,7 +29,7 @@ if __name__ == "__main__":
     max_episodes = 1024
     batch_size = 4096
     random_seed = None
-    num_steps = 100
+    num_steps = 200
 
     save_freq = 250
     name = args.exp_name
@@ -72,7 +72,7 @@ if __name__ == "__main__":
 
         last_reward = 0
 
-        for t in range(num_steps):
+        for t in tqdm(range(num_steps)):
 
             # Running policy_old:
             action = ppo.policy_old.act(state, memory)
@@ -84,7 +84,9 @@ if __name__ == "__main__":
             last_reward = reward.squeeze(-1)
 
         ppo.update(memory)
+        # memory is quite high within this operation
         memory.clear_memory()
+        # memory is quite low here
 
         print("=" * 100, flush=True)
 

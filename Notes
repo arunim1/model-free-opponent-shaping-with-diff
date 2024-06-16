@@ -1,0 +1,6 @@
+Notes: 
+
+1. The code is based on the paper "Model-Free Opponent Shaping" by Lu, Timon, and Christian Schroeder de Witt.
+2. I had made many changes to the code (see /src-old/), and I am not sure if I have made mistakes—in light of this, I'm now rewriting the code from scratch (in /src/).
+3. I'll first concentrate solely on non-MFOS games, and then add MFOS support. 
+4. Largely, the work should consist of implementing similarity-based cooperation games in a general way, and then adding logging and plotting code to the existing code.
