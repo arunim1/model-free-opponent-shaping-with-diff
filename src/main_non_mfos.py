@@ -8,7 +8,7 @@ import time
 from multiprocessing import Pool
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--exp-name", type=str, default="")
+parser.add_argument("--exp-name", type=str, default="non_mfos_pd_widelrs_diffabs_G0.0")
 parser.add_argument("--G", type=float, default=2)
 args = parser.parse_args()
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -151,7 +151,7 @@ if __name__ == "__main__":
     batch_size = 8192
     n_runs_to_track = 20
     num_steps = 500  # 100
-    name = args.exp_name if args.exp_name != "" else "non_mfos_baseline_pd_lrs_multi"
+    name = args.exp_name
     G = args.G
 
     print(f"RUNNING NAME: {name}")
@@ -161,7 +161,7 @@ if __name__ == "__main__":
             json.dump(args.__dict__, f, indent=2)
 
     # prisoner's dilemma
-    pd_payoff_mat_1 = torch.Tensor([[-1, -1 - G], [0, -G]]).to(device)
+    pd_payoff_mat_1 = torch.Tensor([[G, 0], [1 + G, 1]]).to(device)
     pd_payoff_mat_2 = pd_payoff_mat_1.T
     pd = (pd_payoff_mat_1, pd_payoff_mat_2)
     pds = [pd]
@@ -169,7 +169,7 @@ if __name__ == "__main__":
     lrs = np.logspace(-2.5, 1.5, num=30)
     asyms = [None]
     # thresholds = [None, "abs", "exp0", "exp1", "squared", "quartic"]
-    thresholds = [None]
+    thresholds = ["abs"]
     pwlinears = [False]
     ccdrs = [None]
     adams = [False]
@@ -191,11 +191,11 @@ if __name__ == "__main__":
     for pms in pds:
         for p1, p2 in player_combos:
             for lr in lrs:
-                for asym in [None]:
-                    for threshold in [None]:
-                        for pwlinear in [False]:
-                            for ccdr in [False]:
-                                for adam in [False]:
+                for asym in asyms:
+                    for threshold in thresholds:
+                        for pwlinear in pwlinears:
+                            for ccdr in ccdrs:
+                                for adam in adams:
                                     for seed in seeds:
                                         if seed is not None:
                                             np.random.seed(seed)
