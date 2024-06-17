@@ -1,4 +1,0 @@
-{
-  "exp_name": "non_mfos_pd_widelrs_diffabs_G2",
-  "G": 2.0
-}

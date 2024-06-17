@@ -6,7 +6,8 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 def asymmetrize(p_m_1, p_m_2, eps=1e-3):
-    return p_m_1, p_m_2
+    raise NotImplementedError
+
     # implementation below not yet tested - likely incorrect.
     p_m_1 = p_m_1.clone()  # needed because of in-place operations + device apparently
     p_m_2 = p_m_2.clone()
@@ -18,7 +19,7 @@ def asymmetrize(p_m_1, p_m_2, eps=1e-3):
     return p_m_1, p_m_2
 
 
-def one_shot(payout_mat_1, payout_mat_2, bs, asym=None, threshold=None, pwlinear=False):
+def one_shot(payout_mat_1, payout_mat_2, bs, asym=None, threshold=None, pwlinear=None):
     dims = [1, 1]  # one-shot games
     # implement some version of asymetry calculation here.
     if asym is not None:
@@ -58,7 +59,7 @@ def one_shot(payout_mat_1, payout_mat_2, bs, asym=None, threshold=None, pwlinear
             assert torch.all(p_1 >= 0) and torch.all(p_2 >= 0)
             assert torch.all(p_1 <= 1) and torch.all(p_2 <= 1)
 
-        elif pwlinear:
+        elif pwlinear is not None:
             p_1, p_2 = th[0], th[1]
             # TODO: add pwlinear game
         else:
@@ -122,22 +123,6 @@ def iterated(payout_mat_1, payout_mat_2, bs, gamma_inner=0.96, asym=None, ccdr=N
     return dims, Ls
 
 
-def ipd_batched(bs, gamma_inner=0.96):
-    dims = [5, 5]
-    payout_mat_1 = torch.Tensor([[-1, -3], [0, -2]]).to(device)
-    payout_mat_2 = payout_mat_1.T
-
-    return iterated(payout_mat_1, payout_mat_2, bs, gamma_inner=gamma_inner)
-
-
-def imp_batched(bs, gamma_inner=0.96):
-    dims = [5, 5]
-    payout_mat_1 = torch.Tensor([[-1, 1], [1, -1]]).to(device)
-    payout_mat_2 = -payout_mat_1
-
-    return iterated(payout_mat_1, payout_mat_2, bs, gamma_inner=gamma_inner)
-
-
 def get_gradient(function, param):
     grad = torch.autograd.grad(function, param, create_graph=True, allow_unused=True)[0]
     return grad
@@ -161,18 +146,6 @@ def compute_best_response(outer_th_ba):
             inner_th_ba -= grad * lr
     print(l1.mean() * (1 - 0.96))
     return inner_th_ba
-
-
-def matching_pennies_batch(batch_size=128):
-    payout_mat_1 = torch.Tensor([[1, -1], [-1, 1]]).to(device)
-    payout_mat_2 = -payout_mat_1
-    return one_shot(payout_mat_1, payout_mat_2, batch_size)
-
-
-def chicken_game_batch(batch_size=128):
-    payout_mat_1 = torch.Tensor([[0, -1], [1, -100]]).to(device)
-    payout_mat_2 = torch.Tensor([[0, 1], [-1, -100]]).to(device)
-    return one_shot(payout_mat_1, payout_mat_2, batch_size)
 
 
 class MetaGames:
@@ -347,8 +320,10 @@ class NonMfosMetaGames:
         lr=None,
         asym=None,
         threshold=None,
-        pwlinear=False,
+        pwlinear=None,
         seed=None,
+        ccdr=None,
+        adam=False,
     ):
         """
         Opponent can be:
@@ -362,6 +337,9 @@ class NonMfosMetaGames:
 
         self.gamma_inner = 0.96
         self.b = b
+        self.ccdr = ccdr
+        assert self.ccdr is None
+        self.adam = adam
 
         self.p1 = p1
         self.p2 = p2
@@ -397,6 +375,18 @@ class NonMfosMetaGames:
             torch.empty((self.b, self.d), requires_grad=True), std=self.std
         ).to(device)
 
+        self.timestep = 0
+
+        if self.adam:
+            self.beta1 = 0.99
+            self.beta2 = 0.999  # try adjusting this
+            self.eps = 1e-8
+
+            self.p1_m = torch.zeros_like(self.p1_th_ba)
+            self.p1_v = torch.zeros_like(self.p1_th_ba)
+            self.p2_m = torch.zeros_like(self.p2_th_ba)
+            self.p2_v = torch.zeros_like(self.p2_th_ba)
+
         state, _, _, M = self.step()
         if info:
             return state, M
@@ -412,6 +402,12 @@ class NonMfosMetaGames:
         # UPDATE P1
         if self.p1 == "NL":
             grad = get_gradient(l2.sum(), self.p1_th_ba)
+            if self.adam:
+                self.p1_m = self.beta1 * self.p1_m + (1 - self.beta1) * grad
+                self.p1_v = self.beta2 * self.p1_v + (1 - self.beta2) * (grad**2)
+                m_hat = self.p1_m / (1 - self.beta1 ** (self.timestep + 1))
+                v_hat = self.p1_v / (1 - self.beta2 ** (self.timestep + 1))
+                grad = m_hat / (torch.sqrt(v_hat) + self.eps)
             with torch.no_grad():
                 self.p1_th_ba -= grad * self.lr
         elif self.p1 == "LOLA":
@@ -422,6 +418,12 @@ class NonMfosMetaGames:
             ]
             term = (grad_L[0][0] * grad_L[0][1]).sum()
             grad = grad_L[1][1] - self.lr * get_gradient(term, th_ba[1])
+            if self.adam:
+                self.p1_m = self.beta1 * self.p1_m + (1 - self.beta1) * grad
+                self.p1_v = self.beta2 * self.p1_v + (1 - self.beta2) * (grad**2)
+                m_hat = self.p1_m / (1 - self.beta1 ** (self.timestep + 1))
+                v_hat = self.p1_v / (1 - self.beta2 ** (self.timestep + 1))
+                grad = m_hat / (torch.sqrt(v_hat) + self.eps)
             with torch.no_grad():
                 self.p1_th_ba -= grad * self.lr
         elif self.p1 == "STATIC":
@@ -432,6 +434,12 @@ class NonMfosMetaGames:
         # UPDATE P2
         if self.p2 == "NL":
             grad = get_gradient(l1.sum(), self.p2_th_ba)
+            if self.adam:
+                self.p1_m = self.beta1 * self.p1_m + (1 - self.beta1) * grad
+                self.p1_v = self.beta2 * self.p1_v + (1 - self.beta2) * (grad**2)
+                m_hat = self.p1_m / (1 - self.beta1 ** (self.timestep + 1))
+                v_hat = self.p1_v / (1 - self.beta2 ** (self.timestep + 1))
+                grad = m_hat / (torch.sqrt(v_hat) + self.eps)
             with torch.no_grad():
                 self.p2_th_ba -= grad * self.lr
         elif self.p2 == "LOLA":
@@ -442,12 +450,20 @@ class NonMfosMetaGames:
             ]
             term = (grad_L[1][0] * grad_L[1][1]).sum()
             grad = grad_L[0][0] - self.lr * get_gradient(term, th_ba[0])
+            if self.adam:
+                self.p1_m = self.beta1 * self.p1_m + (1 - self.beta1) * grad
+                self.p1_v = self.beta2 * self.p1_v + (1 - self.beta2) * (grad**2)
+                m_hat = self.p1_m / (1 - self.beta1 ** (self.timestep + 1))
+                v_hat = self.p1_v / (1 - self.beta2 ** (self.timestep + 1))
+                grad = m_hat / (torch.sqrt(v_hat) + self.eps)
             with torch.no_grad():
                 self.p2_th_ba -= grad * self.lr
         elif self.p2 == "STATIC":
             pass
         else:
             raise NotImplementedError
+
+        self.timestep += 1
 
         return (
             [torch.sigmoid(last_p1_th_ba), torch.sigmoid(last_p2_th_ba)],

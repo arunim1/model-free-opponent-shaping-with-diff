@@ -1,0 +1,5 @@
+{
+  "exp_name": "non_mfos_pd_midlrs_diffsquared_G1.75",
+  "G": 1.75,
+  "threshold": "squared"
+}

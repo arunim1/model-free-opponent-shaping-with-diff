@@ -1,0 +1,5 @@
+{
+  "exp_name": "non_mfos_pd_highlrs_diffexp1_G2.5_adam",
+  "G": 2.5,
+  "threshold": "exp1"
+}

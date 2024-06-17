@@ -10,6 +10,7 @@ from multiprocessing import Pool
 parser = argparse.ArgumentParser()
 parser.add_argument("--exp-name", type=str, default="non_mfos_pd_widelrs_diffabs_G0.0")
 parser.add_argument("--G", type=float, default=2)
+parser.add_argument("--threshold", type=str, default=None)
 args = parser.parse_args()
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -66,6 +67,8 @@ def get_log(
         threshold=threshold,
         pwlinear=pwlinear,
         seed=seed,
+        ccdr=ccdr,
+        adam=adam,
     )
     env.reset()
     running_rew_p1 = torch.zeros(batch_size).to(device)
@@ -166,18 +169,15 @@ if __name__ == "__main__":
     pd = (pd_payoff_mat_1, pd_payoff_mat_2)
     pds = [pd]
 
-    lrs = np.logspace(-2.5, 1.5, num=30)
+    lrs = np.logspace(-1.5, 1.5, num=24)
     asyms = [None]
     # thresholds = [None, "abs", "exp0", "exp1", "squared", "quartic"]
-    thresholds = ["abs"]
-    pwlinears = [False]
+    thresholds = [args.threshold]
+    pwlinears = [None]
     ccdrs = [None]
-    adams = [False]
+    adams = [True]
 
     player_combos = [
-        ("STATIC", "STATIC"),
-        ("STATIC", "NL"),
-        ("STATIC", "LOLA"),
         ("NL", "NL"),
         ("NL", "LOLA"),
         ("LOLA", "LOLA"),
