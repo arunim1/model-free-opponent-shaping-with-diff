@@ -277,10 +277,10 @@ if __name__ == "__main__":
     mfos_lr = 0.002  # parameters for Adam optimizer
     betas = (0.9, 0.999)
 
-    max_episodes = 16  # 1024
+    max_episodes = 256  # 1024
     batch_size = 128
     n_runs_to_track = 20
-    num_steps = 10
+    num_steps = 500
     G = args.G
 
     save_freq = max_episodes // 4  # 250
