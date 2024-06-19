@@ -231,7 +231,6 @@ def run_simulation(params):
 
 def get_params_tuple(log):
     return (
-        log["p1"],
         log["p2"],
         log["lr"],
         log["asym"],
@@ -307,7 +306,7 @@ if __name__ == "__main__":
     print(f"RUNNING NAME: {name}")
     if not os.path.isdir(name):
         os.mkdir(name)
-        with open(os.path.join(name, "runs/commandline_args.txt"), "w") as f:
+        with open(os.path.join(name, "commandline_args.txt"), "w") as f:
             json.dump(cmd_line_args, f, indent=2)
 
     results = []
@@ -347,11 +346,11 @@ if __name__ == "__main__":
         start_time = time.time()
         results = pool.map(run_simulation, param_list)
         print(f"Elapsed time: {time.time() - start_time}")
-        if not os.path.isdir(f"runs/{name}"):
-            os.mkdir(f"runs/{name}")
+        if not os.path.isdir(f"{name}"):
+            os.mkdir(f"{name}")
 
     log_dict = {get_params_tuple(log): log for log in results}
-    ordered_results = [log_dict[tuple(params[1:11])] for params in param_list]
+    ordered_results = [log_dict[tuple(params[1:10])] for params in param_list]
 
     with open(os.path.join(name, f"out.json"), "w") as f:
         json.dump(ordered_results, f)
