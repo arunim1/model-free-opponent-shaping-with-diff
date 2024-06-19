@@ -278,9 +278,9 @@ if __name__ == "__main__":
     betas = (0.9, 0.999)
 
     max_episodes = 256  # 1024
-    batch_size = 1024
+    batch_size = 256
     n_runs_to_track = 20
-    num_steps = 500
+    num_steps = 250
     G = args.G
 
     save_freq = max_episodes // 4  # 250
