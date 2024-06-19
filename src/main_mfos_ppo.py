@@ -152,24 +152,28 @@ def get_log(
                     state[1].detach().mean(dim=0).squeeze().tolist()
                 )
                 sub_log["params_p1"].append(
-                    state[0].detach()[runs_to_track].squeeze().numpy().tolist()
+                    state[0].detach()[runs_to_track].squeeze().cpu().numpy().tolist()
                 )
                 sub_log["params_p2"].append(
-                    state[1].detach()[runs_to_track].squeeze().numpy().tolist()
+                    state[1].detach()[runs_to_track].squeeze().cpu().numpy().tolist()
                 )
-                sub_log["avg_Ms"].append(M.detach().mean(dim=0).squeeze().tolist())
+                sub_log["avg_Ms"].append(
+                    M.detach().mean(dim=0).squeeze().cpu().tolist()
+                )
                 sub_log["Ms"].append(
-                    M.detach()[runs_to_track].squeeze().numpy().tolist()
+                    M.detach()[runs_to_track].squeeze().cpu().numpy().tolist()
                 )
-                sub_log["avg_rewards_p1"].append(reward.mean(dim=0).squeeze().tolist())
+                sub_log["avg_rewards_p1"].append(
+                    reward.mean(dim=0).squeeze().cpu().tolist()
+                )
                 sub_log["avg_rewards_p2"].append(
-                    opp_reward.mean(dim=0).squeeze().tolist()
+                    opp_reward.mean(dim=0).squeeze().cpu().tolist()
                 )
                 sub_log["rewards_p1"].append(
-                    reward.detach()[runs_to_track].squeeze().tolist()
+                    reward.detach()[runs_to_track].squeeze().cpu().tolist()
                 )
                 sub_log["rewards_p2"].append(
-                    opp_reward.detach()[runs_to_track].squeeze().tolist()
+                    opp_reward.detach()[runs_to_track].squeeze().cpu().tolist()
                 )
 
         if i_episode in [
