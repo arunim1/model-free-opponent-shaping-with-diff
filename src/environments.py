@@ -19,8 +19,19 @@ def asymmetrize(p_m_1, p_m_2, eps=1e-3):
     return p_m_1, p_m_2
 
 
+# Original max_abs_diff function
+def max_abs_diff(arr1, arr2):
+    diffs = torch.abs(arr1 - arr2)
+    return torch.max(diffs, dim=1).values
+
+
+def mellowmax(arr1, arr2, alpha=50):
+    diffs = torch.abs(arr1 - arr2)
+    return (1 / alpha) * torch.log(torch.mean(torch.exp(alpha * diffs), dim=1))
+
+
 def one_shot(payout_mat_1, payout_mat_2, bs, asym=None, threshold=None, pwlinear=None):
-    dims = [1, 1]  # one-shot games
+    dims = [1, 1] if pwlinear is None else [pwlinear, pwlinear]
     # implement some version of asymetry calculation here.
     if asym is not None:
         payout_mat_1, payout_mat_2 = asymmetrize(payout_mat_1, payout_mat_2, asym)
@@ -56,15 +67,44 @@ def one_shot(payout_mat_1, payout_mat_2, bs, asym=None, threshold=None, pwlinear
 
             p_1 = torch.relu(t_1 - diff)
             p_2 = torch.relu(t_2 - diff)
-            assert torch.all(p_1 >= 0) and torch.all(p_2 >= 0)
-            assert torch.all(p_1 <= 1) and torch.all(p_2 <= 1)
 
         elif pwlinear is not None:
-            p_1, p_2 = th[0], th[1]
-            # TODO: add pwlinear game
+            assert th[0].shape[1] == th[1].shape[1] == pwlinear
+
+            y_1, y_2 = torch.sigmoid(th[0]), torch.sigmoid(th[1])
+            y_1 = y_1 * (1 - 1e-5)  # preventing diffs of 1
+            y_2 = y_2 * (1 - 1e-5)
+            # here, y_1 and y_2 are arrays of shape (bs, pwlinear)
+
+            # diffs = max_abs_diff(y_1, y_2)
+            diffs = mellowmax(y_1, y_2)
+            assert torch.all(diffs >= 0) and torch.all(diffs <= 1)
+
+            y_idx = torch.floor(diffs * (pwlinear - 1))
+            interval = 1 / (pwlinear - 1)
+
+            p_1_minus = y_1[range(bs), y_idx.int()]
+            p_1_plus = y_1[range(bs), y_idx.int() + 1]
+            p_2_minus = y_2[range(bs), y_idx.int()]
+            p_2_plus = y_2[range(bs), y_idx.int() + 1]
+
+            w_minus = diffs - (y_idx * interval)
+            w_plus = ((1 + y_idx) * interval) - diffs
+
+            # p is got by interpolating between the values closes to diff in y
+            p_1 = ((p_1_minus * w_minus + p_1_plus * w_plus) / interval).unsqueeze(1)
+            p_2 = ((p_2_minus * w_minus + p_2_plus * w_plus) / interval).unsqueeze(1)
+
         else:
             # non-diff-meta game
             p_1, p_2 = torch.sigmoid(th[0]), torch.sigmoid(th[1])
+
+        assert torch.all(p_1 >= 0) and torch.all(
+            p_2 >= 0
+        ), f"Negative probability found: p_1={p_1}, p_2={p_2}"
+        assert torch.all(p_1 <= 1) and torch.all(
+            p_2 <= 1
+        ), f"Probability greater than 1 found: p_1={p_1}, p_2={p_2}"
 
         x, y = torch.cat([p_1, 1 - p_1], dim=-1), torch.cat([p_2, 1 - p_2], dim=-1)
         M = torch.bmm(x.view(bs, 2, 1), y.view(bs, 1, 2)).view(bs, 1, 4)
@@ -79,6 +119,7 @@ def one_shot(payout_mat_1, payout_mat_2, bs, asym=None, threshold=None, pwlinear
 
 
 def iterated(payout_mat_1, payout_mat_2, bs, gamma_inner=0.96, asym=None, ccdr=None):
+    raise NotImplementedError  # mostly implemented, but shouldn't be used here!
     dims = [5, 5]
     if asym is not None:
         payout_mat_1, payout_mat_2 = asymmetrize(payout_mat_1, payout_mat_2, asym)
@@ -128,28 +169,20 @@ def get_gradient(function, param):
     return grad
 
 
-def compute_best_response(outer_th_ba):
-    batch_size = 1
-    std = 0
-    num_steps = 1000
-    lr = 1
-
-    ipd_batched_env = ipd_batched(batch_size, gamma_inner=0.96)[1]
-    inner_th_ba = torch.nn.init.normal_(
-        torch.empty((batch_size, 5), requires_grad=True), std=std
-    ).to(device)
-    for i in range(num_steps):
-        th_ba = [inner_th_ba, outer_th_ba.detach()]
-        l1, l2, M = ipd_batched_env(th_ba)
-        grad = get_gradient(l1.sum(), inner_th_ba)
-        with torch.no_grad():
-            inner_th_ba -= grad * lr
-    print(l1.mean() * (1 - 0.96))
-    return inner_th_ba
-
-
 class MetaGames:
-    def __init__(self, b, opponent="NL", game="IPD"):
+    def __init__(
+        self,
+        b,
+        pms,
+        opponent="NL",
+        lr=None,
+        asym=None,
+        threshold=None,
+        pwlinear=None,
+        seed=None,
+        ccdr=None,
+        adam=False,
+    ):
         """
         Opponent can be:
         NL = Naive Learner (gradient updates through environment).
@@ -157,27 +190,42 @@ class MetaGames:
         STATIC = Doesn't learn.
         COPYCAT = Copies what opponent played last step.
         """
+        if seed is not None:
+            torch.manual_seed(seed)
+            torch.cuda.manual_seed(seed)
+
         self.gamma_inner = 0.96
         self.b = b
+        self.ccdr = ccdr
+        assert self.ccdr is None
+        self.adam = adam
 
-        self.game = game
-        if self.game == "IPD":
-            d, self.game_batched = ipd_batched(b, gamma_inner=self.gamma_inner)
-            self.std = 1
-            self.lr = 1
-        elif self.game == "IMP":
-            d, self.game_batched = imp_batched(b, gamma_inner=self.gamma_inner)
-            self.std = 1
-            self.lr = 1
-        elif self.game == "chicken":
-            d, self.game_batched = chicken_game_batch(b)
-            self.std = 1
-            self.lr = 1
-        else:
-            raise NotImplementedError
-        self.d = d[0]
-
+        self.p1 = "MFOS"
+        self.p2 = opponent
         self.opponent = opponent
+
+        # assuming one-shot games
+        self.payoff_mat_1 = pms[0]
+        self.payoff_mat_2 = pms[1]
+
+        self.lr = 1 if lr is None else lr
+        self.asym = asym
+        self.threshold = threshold
+        self.pwlinear = pwlinear
+
+        assert self.pwlinear is None or self.threshold is None
+
+        d, self.game_batched = one_shot(
+            self.payoff_mat_1,
+            self.payoff_mat_2,
+            self.b,
+            asym=self.asym,
+            threshold=self.threshold,
+            pwlinear=self.pwlinear,
+        )
+
+        self.std = 1 if self.pwlinear is None else 0.05
+        self.d = d[0]
 
         self.init_th_ba = None
 
@@ -193,6 +241,18 @@ class MetaGames:
         outer_th_ba = torch.nn.init.normal_(
             torch.empty((self.b, self.d), requires_grad=True), std=self.std
         ).to(device)
+
+        self.timestep = 0
+        if self.adam:
+            self.beta1 = 0.99
+            self.beta2 = 0.999  # try adjusting this
+            self.eps = 1e-8
+
+            self.p1_m = torch.zeros_like(outer_th_ba)
+            self.p1_v = torch.zeros_like(outer_th_ba)
+            self.p2_m = torch.zeros_like(self.inner_th_ba)
+            self.p2_v = torch.zeros_like(self.inner_th_ba)
+
         state, _, _, M = self.step(outer_th_ba)
         if info:
             return state, M
@@ -205,6 +265,13 @@ class MetaGames:
             th_ba = [self.inner_th_ba, outer_th_ba.detach()]
             l1, l2, M = self.game_batched(th_ba)
             grad = get_gradient(l1.sum(), self.inner_th_ba)
+            if self.adam:
+                self.p1_m = self.beta1 * self.p1_m + (1 - self.beta1) * grad
+                self.p1_v = self.beta2 * self.p1_v + (1 - self.beta2) * (grad**2)
+                m_hat = self.p1_m / (1 - self.beta1 ** (self.timestep + 1))
+                v_hat = self.p1_v / (1 - self.beta2 ** (self.timestep + 1))
+                grad = m_hat / (torch.sqrt(v_hat) + self.eps)
+
             with torch.no_grad():
                 self.inner_th_ba -= grad * self.lr
         elif self.opponent == "LOLA":
@@ -218,6 +285,14 @@ class MetaGames:
             ]
             term = (grad_L[1][0] * grad_L[1][1]).sum()
             grad = grad_L[0][0] - self.lr * get_gradient(term, th_ba[0])
+
+            if self.adam:
+                self.p1_m = self.beta1 * self.p1_m + (1 - self.beta1) * grad
+                self.p1_v = self.beta2 * self.p1_v + (1 - self.beta2) * (grad**2)
+                m_hat = self.p1_m / (1 - self.beta1 ** (self.timestep + 1))
+                v_hat = self.p1_v / (1 - self.beta2 ** (self.timestep + 1))
+                grad = m_hat / (torch.sqrt(v_hat) + self.eps)
+
             with torch.no_grad():
                 self.inner_th_ba -= grad * self.lr
         elif self.opponent == "BR":
@@ -238,24 +313,17 @@ class MetaGames:
         else:
             raise NotImplementedError
 
-        if self.game == "IPD" or self.game == "IMP":
-            return (
-                torch.sigmoid(
-                    torch.cat((outer_th_ba, last_inner_th_ba), dim=-1)
-                ).detach(),
-                (-l2 * (1 - self.gamma_inner)).detach(),
-                (-l1 * (1 - self.gamma_inner)).detach(),
-                M,
-            )
-        else:
-            return (
-                torch.sigmoid(
-                    torch.cat((outer_th_ba, last_inner_th_ba), dim=-1)
-                ).detach(),
-                -l2.detach(),
-                -l1.detach(),
-                M,
-            )
+        self.timestep += 1
+
+        return (
+            [
+                torch.sigmoid(outer_th_ba).detach(),
+                torch.sigmoid(last_inner_th_ba).detach(),
+            ],
+            -l2.detach(),
+            -l1.detach(),
+            M,
+        )
 
 
 class SymmetricMetaGames:
@@ -353,6 +421,8 @@ class NonMfosMetaGames:
         self.threshold = threshold
         self.pwlinear = pwlinear
 
+        assert self.pwlinear is None or self.threshold is None
+
         d, self.game_batched = one_shot(
             self.payoff_mat_1,
             self.payoff_mat_2,
@@ -362,7 +432,7 @@ class NonMfosMetaGames:
             pwlinear=self.pwlinear,
         )
 
-        self.std = 1
+        self.std = 1 if self.pwlinear is None else 0.05
         self.d = d[0]
 
         self.init_th_ba = None

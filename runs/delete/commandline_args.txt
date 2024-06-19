@@ -1,0 +1,5 @@
+{
+  "exp_name": "delete",
+  "G": 2,
+  "threshold": null
+}

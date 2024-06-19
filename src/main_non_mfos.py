@@ -8,9 +8,10 @@ import time
 from multiprocessing import Pool
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--exp-name", type=str, default="non_mfos_pd_widelrs_diffabs_G0.0")
+parser.add_argument("--exp-name", type=str, default="delete")
 parser.add_argument("--G", type=float, default=2)
 parser.add_argument("--threshold", type=str, default=None)
+parser.add_argument("--pwlinear", type=int, default=None)
 args = parser.parse_args()
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -169,13 +170,13 @@ if __name__ == "__main__":
     pd = (pd_payoff_mat_1, pd_payoff_mat_2)
     pds = [pd]
 
-    lrs = np.logspace(-1.5, 1.5, num=24)
+    lrs = np.logspace(-0, 1.5, num=8)
     asyms = [None]
     # thresholds = [None, "abs", "exp0", "exp1", "squared", "quartic"]
     thresholds = [args.threshold]
-    pwlinears = [None]
+    pwlinears = [args.pwlinear]
     ccdrs = [None]
-    adams = [True]
+    adams = [False]
 
     player_combos = [
         ("NL", "NL"),

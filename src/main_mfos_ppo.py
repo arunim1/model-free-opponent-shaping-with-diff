@@ -7,13 +7,13 @@ import json
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--game", type=str, required=True)
 parser.add_argument("--opponent", type=str, required=True)
 parser.add_argument("--entropy", type=float, default=0.01)
 parser.add_argument("--exp-name", type=str, default="")
 parser.add_argument("--checkpoint", type=str, default="")
-parser.add_argument("--mamaml-id", type=int, default=0)
 args = parser.parse_args()
+
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu" if torch.backends.mps.is_available() else "cpu")  # type: ignore
 
 
 if __name__ == "__main__":
@@ -28,8 +28,9 @@ if __name__ == "__main__":
 
     max_episodes = 1024
     batch_size = 4096
-    random_seed = None
+    n_runs_to_track = 20
     num_steps = 100
+    G = 3
 
     save_freq = 250
     name = args.exp_name
@@ -42,8 +43,24 @@ if __name__ == "__main__":
 
     #############################################
 
+    pd_payoff_mat_1 = torch.Tensor([[G, 0], [1 + G, 1]]).to(device)
+    pd_payoff_mat_2 = pd_payoff_mat_1.T
+    pd = (pd_payoff_mat_1, pd_payoff_mat_2)
+    pds = [pd]
+
     # creating environment
-    env = MetaGames(batch_size, opponent=args.opponent, game=args.game, mmapg_id=args.mamaml_id)
+    env = MetaGames(
+        batch_size,
+        pds[0],
+        opponent="NL",
+        lr=lr,
+        asym=None,
+        threshold=None,
+        pwlinear=None,
+        seed=42,
+        ccdr=None,
+        adam=True,
+    )
 
     action_dim = env.d
     state_dim = env.d * 2
@@ -67,12 +84,13 @@ if __name__ == "__main__":
     for i_episode in range(1, max_episodes + 1):
         state = env.reset()
 
-        running_reward = torch.zeros(batch_size).cuda()
-        running_opp_reward = torch.zeros(batch_size).cuda()
+        running_reward = torch.zeros(batch_size).to(device)
+        running_opp_reward = torch.zeros(batch_size).to(device)
 
         last_reward = 0
 
         for t in range(num_steps):
+            state = torch.cat((state[0], state[1]), dim=-1)
 
             # Running policy_old:
             action = ppo.policy_old.act(state, memory)
