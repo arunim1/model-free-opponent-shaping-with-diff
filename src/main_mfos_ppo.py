@@ -373,7 +373,7 @@ if __name__ == "__main__":
                                             )
                                         )
 
-    with Pool(3) as pool:
+    with Pool(1) as pool:
         start_time = time.time()
         results = pool.map(run_simulation, param_list)
         print(f"Elapsed time: {time.time() - start_time}")
