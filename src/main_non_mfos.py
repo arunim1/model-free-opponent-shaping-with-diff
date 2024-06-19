@@ -155,14 +155,8 @@ if __name__ == "__main__":
     batch_size = 8192
     n_runs_to_track = 20
     num_steps = 500  # 100
-    name = args.exp_name
+    name = f"runs/{args.exp_name}"
     G = args.G
-
-    print(f"RUNNING NAME: {name}")
-    if not os.path.isdir(name):
-        os.mkdir(name)
-        with open(os.path.join(name, "commandline_args.txt"), "w") as f:
-            json.dump(args.__dict__, f, indent=2)
 
     # prisoner's dilemma
     pd_payoff_mat_1 = torch.Tensor([[G, 0], [1 + G, 1]]).to(device)
@@ -186,6 +180,28 @@ if __name__ == "__main__":
     seeds = [42]
 
     assert n_runs_to_track <= batch_size
+
+    cmd_line_args = {}
+    cmd_line_args["batch_size"] = batch_size
+    cmd_line_args["n_runs_to_track"] = n_runs_to_track
+    cmd_line_args["num_steps"] = num_steps
+    cmd_line_args["G"] = G
+    cmd_line_args["threshold"] = thresholds
+    cmd_line_args["pwlinear"] = pwlinears
+    cmd_line_args["ccdr"] = ccdrs
+    cmd_line_args["adam"] = adams
+    cmd_line_args["pds"] = pds
+    cmd_line_args["lrs"] = lrs
+    cmd_line_args["asyms"] = asyms
+    cmd_line_args["player_combos"] = player_combos
+    cmd_line_args["seeds"] = seeds
+    cmd_line_args["name"] = name
+
+    print(f"RUNNING NAME: {name}")
+    if not os.path.isdir(name):
+        os.mkdir(name)
+        with open(os.path.join(name, "commandline_args.txt"), "w") as f:
+            json.dump(cmd_line_args, f, indent=2)
 
     results = []
     param_list = []
