@@ -32,6 +32,7 @@ def get_log(
     p1,
     p2,
     lr,
+    mfos_lr,
     asym,
     threshold,
     pwlinear,
@@ -49,6 +50,7 @@ def get_log(
     log["p1"] = p1
     log["p2"] = p2
     log["lr"] = lr
+    log["mfos_lr"] = mfos_lr
     log["asym"] = asym
     log["threshold"] = threshold
     log["pwlinear"] = pwlinear
@@ -202,6 +204,7 @@ def run_simulation(params):
         pms,
         opponent,
         lr,
+        mfos_lr,
         asym,
         threshold,
         pwlinear,
@@ -217,6 +220,7 @@ def run_simulation(params):
         "MFOS",
         opponent,
         lr,
+        mfos_lr,
         asym,
         threshold,
         pwlinear,
@@ -233,6 +237,7 @@ def get_params_tuple(log):
     return (
         log["p2"],
         log["lr"],
+        log["mfos_lr"],
         log["asym"],
         log["threshold"],
         log["pwlinear"],
@@ -330,6 +335,7 @@ if __name__ == "__main__":
                                                 pms,
                                                 opponent,
                                                 lr,
+                                                mfos_lr,
                                                 asym,
                                                 threshold,
                                                 pwlinear,
