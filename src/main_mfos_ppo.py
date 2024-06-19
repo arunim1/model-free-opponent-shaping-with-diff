@@ -62,8 +62,7 @@ def get_log(
     env = MetaGames(
         b=batch_size,
         pms=pms,
-        p1=p1,
-        p2=p2,
+        opponent=p2,
         lr=lr,
         asym=asym,
         threshold=threshold,
