@@ -6,13 +6,11 @@ import argparse
 import json
 import numpy as np
 from tqdm import tqdm
-from multiprocessing import Pool
-import multiprocessing as mp
 import time
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--exp-name", type=str, default="")
+parser.add_argument("--exp-name", type=str, default="delete")
 parser.add_argument("--G", type=float, default=2)
 parser.add_argument("--threshold", type=str, default=None)
 parser.add_argument("--pwlinear", type=int, default=None)
@@ -22,7 +20,13 @@ args = parser.parse_args()
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu" if torch.backends.mps.is_available() else "cpu")  # type: ignore
 
-mp.set_start_method("spawn")
+if torch.cuda.is_available():
+    from torch.multiprocessing import Pool
+    import torch.multiprocessing as mp
+
+    mp.set_start_method("spawn")
+else:
+    from multiprocessing import Pool
 
 
 def get_log(
