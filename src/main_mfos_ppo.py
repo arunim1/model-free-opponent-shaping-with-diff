@@ -48,11 +48,13 @@ if __name__ == "__main__":
     pd = (pd_payoff_mat_1, pd_payoff_mat_2)
     pds = [pd]
 
+    opponent = args.opponent
+
     # creating environment
     env = MetaGames(
         batch_size,
         pds[0],
-        opponent="NL",
+        opponent=opponent,
         lr=lr,
         asym=None,
         threshold=None,
