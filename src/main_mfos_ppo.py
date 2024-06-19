@@ -33,6 +33,10 @@ def get_log(
     p2,
     lr,
     mfos_lr,
+    betas,
+    gamma,
+    K_epochs,
+    eps_clip,
     asym,
     threshold,
     pwlinear,
@@ -51,6 +55,10 @@ def get_log(
     log["p2"] = p2
     log["lr"] = lr
     log["mfos_lr"] = mfos_lr
+    log["betas"] = betas
+    log["gamma"] = gamma
+    log["K_epochs"] = K_epochs
+    log["eps_clip"] = eps_clip
     log["asym"] = asym
     log["threshold"] = threshold
     log["pwlinear"] = pwlinear
@@ -205,6 +213,10 @@ def run_simulation(params):
         opponent,
         lr,
         mfos_lr,
+        betas,
+        gamma,
+        K_epochs,
+        eps_clip,
         asym,
         threshold,
         pwlinear,
@@ -221,6 +233,10 @@ def run_simulation(params):
         opponent,
         lr,
         mfos_lr,
+        betas,
+        gamma,
+        K_epochs,
+        eps_clip,
         asym,
         threshold,
         pwlinear,
@@ -238,6 +254,10 @@ def get_params_tuple(log):
         log["p2"],
         log["lr"],
         log["mfos_lr"],
+        log["betas"],
+        log["gamma"],
+        log["K_epochs"],
+        log["eps_clip"],
         log["asym"],
         log["threshold"],
         log["pwlinear"],
@@ -336,6 +356,10 @@ if __name__ == "__main__":
                                                 opponent,
                                                 lr,
                                                 mfos_lr,
+                                                betas,
+                                                gamma,
+                                                K_epochs,
+                                                eps_clip,
                                                 asym,
                                                 threshold,
                                                 pwlinear,
@@ -356,7 +380,7 @@ if __name__ == "__main__":
             os.mkdir(f"{name}")
 
     log_dict = {get_params_tuple(log): log for log in results}
-    ordered_results = [log_dict[tuple(params[1:10])] for params in param_list]
+    ordered_results = [log_dict[tuple(params[1:15])] for params in param_list]
 
     with open(os.path.join(name, f"out.json"), "w") as f:
         json.dump(ordered_results, f)
