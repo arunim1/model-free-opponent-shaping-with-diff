@@ -6,7 +6,7 @@ from matplotlib import cycler
 import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--folder", type=str, default="/runs/delmac")
+parser.add_argument("--folder", type=str, default="/runs/G3multimfospt2")
 args = parser.parse_args()
 
 # Load the JSON file
@@ -32,7 +32,10 @@ for combo in player_combos:
     # Extract learning rates
     lrs = [d["lr"] for d in combo_data]
 
-    fig, axes = plt.subplots(1, 6, figsize=(18, 3))
+    fig, axes = plt.subplots(1, 6, figsize=(18, 3), sharey=True)
+
+    for ax in axes:
+        ax.set_aspect(1.8)
 
     for game_idx in range(5):  # Assuming there are always 5 logs in five_game_logs
         avg_ms = [np.array(d["five_game_logs"][game_idx]["avg_Ms"]) for d in combo_data]
@@ -78,17 +81,17 @@ for combo in player_combos:
                 lrs,
                 [state_esv[:, i] for state_esv in state_esvs],
                 label=states[i],
-                alpha=0.13,
+                alpha=0.08,
                 color=colors[i],
             )
         axes.flatten()[game_idx].set_xscale("log")
-        axes.flatten()[game_idx].set_xlabel(f"Timestep {game_idx+1}/5")
+        axes.flatten()[game_idx].set_xlabel(f"Timestep {game_idx + 1}/5")
         axes.flatten()[game_idx].set_ylim(-0.05, 1.05)
 
     # set x and y labels for the overall plot
     fig.supxlabel("Learning Rate")
-    fig.supylabel("Average Expected State Visitation")
-    fig.suptitle(f"{p1} vs. {p2}: Avg ESV vs. Timestep")
+    fig.supylabel("Avg ESV")
+    fig.suptitle(f"{p1} vs. {p2}: Average Expected State Visitation vs. Timestep")
 
     axes.flatten()[-1].axis("off")
     # Add payoff matrices to the plot
@@ -111,7 +114,7 @@ for combo in player_combos:
         cellText=payoff_data,
         cellLoc="center",
         loc="center",
-        colWidths=[0.2, 0.24, 0.24],
+        colWidths=[0.4, 0.48, 0.48],
     )
     table.scale(1, 1.7)  # Adjust the size of the payoff matrices
     table.set_fontsize(13)  # Adjust the font size of the payoff matrices
