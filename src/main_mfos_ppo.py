@@ -278,7 +278,7 @@ if __name__ == "__main__":
     betas = (0.9, 0.999)
 
     max_episodes = 256  # 1024
-    batch_size = 128
+    batch_size = 1024
     n_runs_to_track = 20
     num_steps = 500
     G = args.G
@@ -372,7 +372,7 @@ if __name__ == "__main__":
                                             )
                                         )
 
-    with Pool(1) as pool:
+    with Pool(4) as pool:
         start_time = time.time()
         results = pool.map(run_simulation, param_list)
         print(f"Elapsed time: {time.time() - start_time}")
