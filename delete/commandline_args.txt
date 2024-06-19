@@ -1,0 +1,6 @@
+{
+  "opponent": "STATIC",
+  "entropy": 0.01,
+  "exp_name": "delete",
+  "checkpoint": ""
+}

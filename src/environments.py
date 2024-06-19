@@ -310,6 +310,8 @@ class MetaGames:
                 self.inner_th_ba = inner_th_ba
                 th_ba = [self.inner_th_ba, outer_th_ba.detach()]
                 l1, l2, M = self.game_batched(th_ba)
+        elif self.opponent == "STATIC":
+            pass
         else:
             raise NotImplementedError
 
