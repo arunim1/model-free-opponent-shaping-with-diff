@@ -23,7 +23,7 @@ if __name__ == "__main__":
     eps_clip = 0.2  # clip parameter for PPO
     gamma = 0.99  # discount factor
 
-    lr = 0.002  # parameters for Adam optimizer
+    mfos_lr = 0.002  # parameters for Adam optimizer
     betas = (0.9, 0.999)
 
     max_episodes = 1024
@@ -47,6 +47,7 @@ if __name__ == "__main__":
     pd_payoff_mat_2 = pd_payoff_mat_1.T
     pd = (pd_payoff_mat_1, pd_payoff_mat_2)
     pds = [pd]
+    lr = 1
 
     opponent = args.opponent
 
@@ -68,12 +69,14 @@ if __name__ == "__main__":
     state_dim = env.d * 2
 
     memory = Memory()
-    ppo = PPO(state_dim, action_dim, lr, betas, gamma, K_epochs, eps_clip, args.entropy)
+    ppo = PPO(
+        state_dim, action_dim, mfos_lr, betas, gamma, K_epochs, eps_clip, args.entropy
+    )
 
     if args.checkpoint:
         ppo.load(args.checkpoint)
 
-    print(lr, betas)
+    print(mfos_lr, betas)
 
     # logging variables
     running_reward = 0
