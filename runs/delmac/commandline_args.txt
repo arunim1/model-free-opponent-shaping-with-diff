@@ -1,0 +1,20 @@
+{
+  "batch_size": 128,
+  "n_runs_to_track": 20,
+  "num_steps": 10,
+  "G": 2,
+  "threshold": [
+    null
+  ],
+  "pwlinear": [
+    null
+  ],
+  "ccdr": [
+    null
+  ],
+  "adam": [
+    false
+  ],
+  "pds": [
+    [
+      

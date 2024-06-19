@@ -63,8 +63,8 @@ def get_log(
     log["adam"] = adam
     log["num_steps"] = num_steps
     log["batch_size"] = batch_size
-    log["five_game_logs"] = []
     log["seed"] = seed
+    log["five_game_logs"] = []
 
     env = MetaGames(
         b=batch_size,
@@ -98,7 +98,7 @@ def get_log(
     # training loop
     rew_means = []
 
-    for i_episode in range(1, max_episodes + 1):
+    for i_episode in tqdm(range(1, max_episodes + 1)):
         state = env.reset()
 
         running_reward = torch.zeros(batch_size).to(device)
@@ -257,7 +257,6 @@ def get_params_tuple(log):
         log["p2"],
         log["lr"],
         log["mfos_lr"],
-        log["betas"],
         log["asym"],
         log["threshold"],
         log["pwlinear"],
@@ -278,10 +277,10 @@ if __name__ == "__main__":
     mfos_lr = 0.002  # parameters for Adam optimizer
     betas = (0.9, 0.999)
 
-    max_episodes = 256  # 1024
-    batch_size = 4096
+    max_episodes = 16  # 1024
+    batch_size = 128
     n_runs_to_track = 20
-    num_steps = 500
+    num_steps = 10
     G = args.G
 
     save_freq = max_episodes // 4  # 250
@@ -315,7 +314,7 @@ if __name__ == "__main__":
     cmd_line_args["pwlinear"] = pwlinears
     cmd_line_args["ccdr"] = ccdrs
     cmd_line_args["adam"] = adams
-    cmd_line_args["pds"] = pds
+    cmd_line_args["payoff_mat_p1"] = pd_payoff_mat_1.cpu().numpy().tolist()
     cmd_line_args["lrs"] = lrs
     cmd_line_args["asyms"] = asyms
     cmd_line_args["opponents"] = opponents
@@ -381,7 +380,11 @@ if __name__ == "__main__":
             os.mkdir(f"{name}")
 
     log_dict = {get_params_tuple(log): log for log in results}
-    ordered_results = [log_dict[tuple(params[1:12])] for params in param_list]
+    # ordered_results = [log_dict[tuple(params[1:12])] for params in param_list]
+    ordered_results = []
+    for params in param_list:
+        tup = tuple(params[1:4] + params[9:16])
+        ordered_results.append(log_dict[tup])
 
     with open(os.path.join(name, f"out.json"), "w") as f:
         json.dump(ordered_results, f)
