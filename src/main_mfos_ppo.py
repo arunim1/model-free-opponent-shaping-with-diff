@@ -201,8 +201,7 @@ def get_log(
 def run_simulation(params):
     (
         pms,
-        p1,
-        p2,
+        opponent,
         lr,
         asym,
         threshold,
@@ -216,8 +215,8 @@ def run_simulation(params):
     ) = params
     return get_log(
         pms,
-        p1,
-        p2,
+        "MFOS",
+        opponent,
         lr,
         asym,
         threshold,
