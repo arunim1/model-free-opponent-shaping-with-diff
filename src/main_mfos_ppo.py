@@ -7,6 +7,12 @@ import json
 import numpy as np
 from tqdm import tqdm
 import time
+from torch.multiprocessing import Pool, Process, set_start_method
+
+try:
+    set_start_method("spawn")
+except RuntimeError:
+    pass
 
 
 parser = argparse.ArgumentParser()
@@ -19,14 +25,6 @@ parser.add_argument("--checkpoint", type=str, default="")
 args = parser.parse_args()
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu" if torch.backends.mps.is_available() else "cpu")  # type: ignore
-
-if torch.cuda.is_available():
-    from torch.multiprocessing import Pool
-    import torch.multiprocessing as mp
-
-    mp.set_start_method("spawn")
-else:
-    from multiprocessing import Pool
 
 
 def get_log(
