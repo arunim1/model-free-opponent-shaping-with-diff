@@ -384,7 +384,7 @@ if __name__ == "__main__":
     eps_clip = 0.2  # clip parameter for PPO
     gamma = 0.99  # discount factor
 
-    mfos_lr = 0.002  # parameters for Adam optimizer
+    mfos_lr = 0.0002  # parameters for Adam optimizer
     betas = (0.9, 0.999)
 
     max_episodes = 256  # 1024
