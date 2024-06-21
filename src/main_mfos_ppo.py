@@ -326,6 +326,7 @@ if __name__ == "__main__":
     cmd_line_args["mfos_lr"] = mfos_lr
     cmd_line_args["betas"] = betas
     cmd_line_args["max_episodes"] = max_episodes
+    cmd_line_args["save_freq"] = save_freq
 
     print(f"RUNNING NAME: {name}")
     if not os.path.isdir(name):

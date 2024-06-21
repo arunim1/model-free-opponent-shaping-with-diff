@@ -330,23 +330,45 @@ class MetaGames:
 
 
 class SymmetricMetaGames:
-    def __init__(self, b, game="IPD"):
+    def __init__(
+        self,
+        b,
+        pms,
+        asym=None,
+        threshold=None,
+        pwlinear=None,
+        seed=None,
+        ccdr=None,
+    ):
+        if seed is not None:
+            torch.manual_seed(seed)
+            torch.cuda.manual_seed(seed)
+
         self.gamma_inner = 0.96
-
         self.b = b
-        self.game = game
-        if self.game == "IPD":
-            d, self.game_batched = ipd_batched(b, gamma_inner=self.gamma_inner)
-            self.std = 1
-        elif self.game == "IMP":
-            d, self.game_batched = imp_batched(b, gamma_inner=self.gamma_inner)
-            self.std = 1
-        elif self.game == "chicken":
-            d, self.game_batched = chicken_game_batch(b)
-            self.std = 1
-        else:
-            raise NotImplementedError
+        self.ccdr = ccdr
+        assert self.ccdr is None
+        # no need for adam
 
+        self.payoff_mat_1 = pms[0]
+        self.payoff_mat_2 = pms[1]
+
+        self.asym = asym
+        self.threshold = threshold
+        self.pwlinear = pwlinear
+
+        assert self.pwlinear is None or self.threshold is None
+
+        d, self.game_batched = one_shot(
+            self.payoff_mat_1,
+            self.payoff_mat_2,
+            self.b,
+            asym=self.asym,
+            threshold=self.threshold,
+            pwlinear=self.pwlinear,
+        )
+
+        self.std = 1 if self.pwlinear is None else 0.05
         self.d = d[0]
 
     def reset(self, info=False):
@@ -356,29 +378,24 @@ class SymmetricMetaGames:
         p_ba_1 = torch.nn.init.normal_(torch.empty((self.b, self.d)), std=self.std).to(
             device
         )
-        state_0 = torch.sigmoid(torch.cat((p_ba_0.detach(), p_ba_1.detach()), dim=-1))
-        state_1 = torch.sigmoid(torch.cat((p_ba_1.detach(), p_ba_0.detach()), dim=-1))
+        # state_0 = torch.sigmoid(torch.cat((p_ba_0.detach(), p_ba_1.detach()), dim=-1))
+        # state_1 = torch.sigmoid(torch.cat((p_ba_1.detach(), p_ba_0.detach()), dim=-1))
 
-        if info:
-            state, _, M = self.step(p_ba_0, p_ba_1)
-            return state, M
-        else:
-            return [state_0, state_1]
+        return [torch.sigmoid(p_ba_1).detach(), torch.sigmoid(p_ba_0).detach()]
 
     def step(self, p_ba_0, p_ba_1):
-        th_ba = [p_ba_0.detach(), p_ba_1.detach()]
-        l1, l2, M = self.game_batched(th_ba)
-        state_0 = torch.sigmoid(torch.cat((p_ba_0.detach(), p_ba_1.detach()), dim=-1))
-        state_1 = torch.sigmoid(torch.cat((p_ba_1.detach(), p_ba_0.detach()), dim=-1))
+        th_ba = [p_ba_0.detach(), p_ba_1.detach()]  # in non_mfos, this is [p2, p1]
 
-        if self.game == "IPD" or self.game == "IMP":
-            return (
-                [state_0, state_1],
-                [-l1 * (1 - self.gamma_inner), -l2 * (1 - self.gamma_inner)],
-                M,
-            )
-        else:
-            return [state_0, state_1], [-l1.detach(), -l2.detach()], M
+        l1, l2, M = self.game_batched(th_ba)
+        # state_0 = torch.sigmoid(torch.cat((p_ba_0.detach(), p_ba_1.detach()), dim=-1))
+        # state_1 = torch.sigmoid(torch.cat((p_ba_1.detach(), p_ba_0.detach()), dim=-1))
+
+        return (
+            # [state_0, state_1],
+            [torch.sigmoid(p_ba_1).detach(), torch.sigmoid(p_ba_0).detach()],
+            [-l1.detach(), -l2.detach()],
+            M,
+        )
 
 
 class NonMfosMetaGames:

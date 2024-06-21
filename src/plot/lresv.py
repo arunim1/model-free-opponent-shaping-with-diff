@@ -20,9 +20,6 @@ player_combos = list(set((d["p1"], d["p2"]) for d in data))
 # We'll average over the last 20% of each run
 pct_to_average = 0.2
 
-# plt.rcParams["axes.prop_cycle"] = cycler(color=colors)
-
-
 # Create a plot for each player combination
 for combo in player_combos:
     p1, p2 = combo
