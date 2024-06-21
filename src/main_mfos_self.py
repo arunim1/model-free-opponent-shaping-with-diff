@@ -395,7 +395,7 @@ if __name__ == "__main__":
 
     save_freq = max_episodes // 4  # 250
 
-    lamb = 1.0
+    lamb = -1.0
     lamb_anneal = 0.006  # 0.0015
     name = f"runs/{args.exp_name}"
 
