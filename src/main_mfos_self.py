@@ -26,6 +26,9 @@ args = parser.parse_args()
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu" if torch.backends.mps.is_available() else "cpu")  # type: ignore
 
 
+# TODO: Mfos self-play is not cooperating yet, by the looks of it.
+
+
 def get_log(
     pms,
     p1,
@@ -401,7 +404,8 @@ if __name__ == "__main__":
 
     #############################################
 
-    pd_payoff_mat_1 = torch.Tensor([[G, 0], [1 + G, 1]]).to(device)
+    # ezc
+    pd_payoff_mat_1 = torch.Tensor([[10.0, 3.0], [2.0, 0.0]]).to(device)
     pd_payoff_mat_2 = pd_payoff_mat_1.T
     pd = (pd_payoff_mat_1, pd_payoff_mat_2)
     pds = [pd]
