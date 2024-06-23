@@ -409,7 +409,8 @@ if __name__ == "__main__":
     pd_payoff_mat_2 = pd_payoff_mat_1.T
     pd = (pd_payoff_mat_1, pd_payoff_mat_2)
     pds = [pd]
-    lrs = [0.1, 0.3, 1, 3, 10]
+    # lrs = [0.1, 0.3, 1, 3, 10]
+    lrs = [1]
     asyms = [None]
     thresholds = [args.threshold]
     pwlinears = [args.pwlinear]
