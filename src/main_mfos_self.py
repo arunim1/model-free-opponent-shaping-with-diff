@@ -406,7 +406,8 @@ if __name__ == "__main__":
 
     # ezc
     pd_payoff_mat_1 = torch.Tensor([[10.0, 3.0], [2.0, 0.0]]).to(device)
-    pd_payoff_mat_2 = pd_payoff_mat_1.T
+    # pd_payoff_mat_2 = pd_payoff_mat_1.T
+    pd_payoff_mat_2 = torch.zeros_like(pd_payoff_mat_1)
     pd = (pd_payoff_mat_1, pd_payoff_mat_2)
     pds = [pd]
     # lrs = [0.1, 0.3, 1, 3, 10]
