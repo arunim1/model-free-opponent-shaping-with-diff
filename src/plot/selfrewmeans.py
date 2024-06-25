@@ -4,7 +4,7 @@ import argparse
 import os
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--folder", type=str, default="/runs/mfos_self_ezc")
+parser.add_argument("--folder", type=str, default="/runs/mfos_self_ezp1nop2")
 args = parser.parse_args()
 
 # Load the JSON file
