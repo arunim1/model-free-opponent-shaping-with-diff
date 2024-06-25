@@ -339,23 +339,27 @@ class SymmetricMetaGames:
         pwlinear=None,
         seed=None,
         ccdr=None,
-        adam=False,
     ):
         if seed is not None:
             torch.manual_seed(seed)
             torch.cuda.manual_seed(seed)
         self.b = b
+        self.ccdr = ccdr
+        assert self.ccdr is None
+        # no need for adam
+
+        assert pwlinear is None or threshold is None
 
         d, self.game_batched = one_shot(
             pms[0],
             pms[1],
-            b,
-            asym=None,
+            self.b,
+            asym=asym,
             threshold=threshold,
-            pwlinear=None,
+            pwlinear=pwlinear,
         )
-        self.std = 1
 
+        self.std = 1 if pwlinear is None else 0.05
         self.d = d[0]
 
     def reset(self, info=False):
@@ -368,11 +372,7 @@ class SymmetricMetaGames:
         state_0 = torch.sigmoid(torch.cat((p_ba_0.detach(), p_ba_1.detach()), dim=-1))
         state_1 = torch.sigmoid(torch.cat((p_ba_1.detach(), p_ba_0.detach()), dim=-1))
 
-        if info:
-            state, _, M = self.step(p_ba_0, p_ba_1)
-            return state, M
-        else:
-            return [state_0, state_1]
+        return [state_0, state_1]
 
     def step(self, p_ba_0, p_ba_1):
         th_ba = [p_ba_0.detach(), p_ba_1.detach()]
@@ -398,7 +398,6 @@ class NewSymmetricMetaGames:
             torch.manual_seed(seed)
             torch.cuda.manual_seed(seed)
 
-        self.gamma_inner = 0.96
         self.b = b
         self.ccdr = ccdr
         assert self.ccdr is None
@@ -432,21 +431,22 @@ class NewSymmetricMetaGames:
         p_ba_1 = torch.nn.init.normal_(torch.empty((self.b, self.d)), std=self.std).to(
             device
         )
-        # state_0 = torch.sigmoid(torch.cat((p_ba_0.detach(), p_ba_1.detach()), dim=-1))
-        # state_1 = torch.sigmoid(torch.cat((p_ba_1.detach(), p_ba_0.detach()), dim=-1))
+        state_0 = torch.sigmoid(torch.cat((p_ba_0.detach(), p_ba_1.detach()), dim=-1))
+        state_1 = torch.sigmoid(torch.cat((p_ba_1.detach(), p_ba_0.detach()), dim=-1))
 
-        return [torch.sigmoid(p_ba_1).detach(), torch.sigmoid(p_ba_0).detach()]
+        # return [torch.sigmoid(p_ba_1).detach(), torch.sigmoid(p_ba_0).detach()]
+        return [state_0, state_1]
 
     def step(self, p_ba_0, p_ba_1):
         th_ba = [p_ba_0.detach(), p_ba_1.detach()]  # in non_mfos, this is [p2, p1]
 
         l1, l2, M = self.game_batched(th_ba)
-        # state_0 = torch.sigmoid(torch.cat((p_ba_0.detach(), p_ba_1.detach()), dim=-1))
-        # state_1 = torch.sigmoid(torch.cat((p_ba_1.detach(), p_ba_0.detach()), dim=-1))
+        state_0 = torch.sigmoid(torch.cat((p_ba_0.detach(), p_ba_1.detach()), dim=-1))
+        state_1 = torch.sigmoid(torch.cat((p_ba_1.detach(), p_ba_0.detach()), dim=-1))
 
         return (
-            # [state_0, state_1],
-            [torch.sigmoid(p_ba_1).detach(), torch.sigmoid(p_ba_0).detach()],
+            [state_0, state_1],
+            # [torch.sigmoid(p_ba_1).detach(), torch.sigmoid(p_ba_0).detach()],
             [-l1.detach(), -l2.detach()],
             M,
         )

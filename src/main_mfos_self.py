@@ -1,6 +1,8 @@
 import torch
 from ppo import PPO, Memory
-from environments import MetaGames, SymmetricMetaGames
+
+# from environments import MetaGames, SymmetricMetaGames
+from environments import NewSymmetricMetaGames as SymmetricMetaGames
 import os
 import argparse
 import json
@@ -27,7 +29,7 @@ if __name__ == "__main__":
     max_episodes = 256
     batch_size = 4096
     random_seed = 42
-    num_steps = 500
+    num_steps = 250
 
     save_freq = max_episodes // 4  # 250
 
