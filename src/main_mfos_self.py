@@ -27,7 +27,7 @@ if __name__ == "__main__":
     max_episodes = 256
     batch_size = 4096
     random_seed = 42
-    num_steps = 100
+    num_steps = 500
 
     save_freq = max_episodes // 4  # 250
 
