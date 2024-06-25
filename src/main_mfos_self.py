@@ -24,12 +24,12 @@ if __name__ == "__main__":
     lr = 0.0002  # parameters for Adam optimizer
     betas = (0.9, 0.999)
 
-    max_episodes = 1024
+    max_episodes = 256
     batch_size = 4096
-    random_seed = None
+    random_seed = 42
     num_steps = 100
 
-    save_freq = 1000
+    save_freq = max_episodes // 4  # 250
 
     lamb = -1.0  # No annealing
     lamb_anneal = 0.0015
@@ -54,7 +54,7 @@ if __name__ == "__main__":
     thresholds = ["abs"]
     ccdrs = [None]
     adams = [False]
-    seeds = [None]
+    seeds = [random_seed]
 
     env = SymmetricMetaGames(
         batch_size,
