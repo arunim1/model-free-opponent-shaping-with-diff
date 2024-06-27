@@ -19,8 +19,12 @@ except RuntimeError:
 parser = argparse.ArgumentParser()
 parser.add_argument("--exp-name", type=str, default="")
 parser.add_argument("--G", type=float, default=2)
+parser.add_argument("--asym", type=int, default=None)
 parser.add_argument("--threshold", type=str, default=None)
 parser.add_argument("--pwlinear", type=int, default=None)
+parser.add_argument("--ccdr", type=int, default=None)
+parser.add_argument("--adam", type=int, default=False)
+
 parser.add_argument("--entropy", type=float, default=0.01)
 parser.add_argument("--checkpoint", type=str, default="")
 args = parser.parse_args()
@@ -32,7 +36,7 @@ def get_log(
     pms,
     p1,
     p2,
-    lr,
+    anneal_lr,
     mfos_lr1,
     mfos_lr2,
     betas,
@@ -51,6 +55,8 @@ def get_log(
     seed,
     lamb,
     lamb_anneal,
+    opponent,
+    entropy,
 ):
     # initialize empty log for this game
     log = {}
@@ -58,7 +64,7 @@ def get_log(
     log["payoff_mat_p1"] = pms[1].cpu().numpy().tolist()
     log["p1"] = p1
     log["p2"] = p2
-    log["lr"] = lr
+    log["anneal_lr"] = anneal_lr
     log["mfos_lr1"] = mfos_lr1
     log["mfos_lr2"] = mfos_lr2
     log["asym"] = asym
@@ -69,6 +75,8 @@ def get_log(
     log["num_steps"] = num_steps
     log["batch_size"] = batch_size
     log["seed"] = seed
+    log["lamb"] = lamb
+    log["lamb_anneal"] = lamb_anneal
     log["five_game_logs"] = []
 
     env = SymmetricMetaGames(
@@ -95,7 +103,7 @@ def get_log(
         gamma,
         K_epochs,
         eps_clip,
-        entropy=args.entropy,
+        entropy=entropy,
     )
     ppo_1 = PPO(
         state_dim,
@@ -105,14 +113,14 @@ def get_log(
         gamma,
         K_epochs,
         eps_clip,
-        entropy=args.entropy,
+        entropy=entropy,
     )
 
     nl_env = MetaGames(
         batch_size,
         pms=pms,
-        opponent="NL",
-        lr=lr,
+        opponent=opponent,
+        lr=anneal_lr,
         asym=asym,
         threshold=threshold,
         pwlinear=pwlinear,
@@ -282,7 +290,7 @@ def get_log(
 def run_simulation(params):
     (
         pms,
-        lr,
+        anneal_lr,
         mfos_lr1,
         mfos_lr2,
         betas,
@@ -301,12 +309,14 @@ def run_simulation(params):
         seed,
         lamb,
         lamb_anneal,
+        opponent,
+        entropy,
     ) = params
     return get_log(
         pms,
         "MFOS 1",
         "MFOS 2",
-        lr,
+        anneal_lr,
         mfos_lr1,
         mfos_lr2,
         betas,
@@ -325,13 +335,14 @@ def run_simulation(params):
         seed,
         lamb,
         lamb_anneal,
+        opponent,
+        entropy,
     )
 
 
 def get_params_tuple(log):
     return (
-        log["p1"],
-        log["lr"],
+        log["anneal_lr"],
         log["mfos_lr1"],
         log["mfos_lr2"],
         log["asym"],
@@ -341,18 +352,23 @@ def get_params_tuple(log):
         log["adam"],
         log["num_steps"],
         log["batch_size"],
+        log["seed"],
+        log["lamb"],
+        log["lamb_anneal"],
     )
 
 
-if __name__ == "__main__":
+def main():
     ############################################
     K_epochs = 4  # update policy for K epochs
 
     eps_clip = 0.2  # clip parameter for PPO
     gamma = 0.99  # discount factor
 
-    lr = 0.0002  # parameters for Adam optimizer
+    mfos1_lrs = [0.0002]  # parameters for Adam optimizer
+    mfos2_lrs = [0.0002]
     betas = (0.9, 0.999)
+    entropy = args.entropy
 
     max_episodes = 256
     batch_size = 256
@@ -360,53 +376,44 @@ if __name__ == "__main__":
     num_steps = 250
     G = args.G
 
-    save_freq = max_episodes // 4  # 250
+    save_freq = max_episodes // 4
 
     lamb = 1.0
     lamb_anneal = 0.0015
     name = f"runs/self/{args.exp_name}"
 
-    # print(f"RUNNING NAME: {name}")
-    # if not os.path.isdir(name):
-    #     os.mkdir(name)
-    #     with open(os.path.join(name, "commandline_args.txt"), "w") as f:
-    #         json.dump(args.__dict__, f, indent=2)
-
-    #############################################
-
     # creating environment
-    pd_payoff_mat_1 = torch.Tensor([[3, 0], [1 + 3, 1]]).to(device)
-    pd_payoff_mat_2 = pd_payoff_mat_1.T
-    pd = (pd_payoff_mat_1, pd_payoff_mat_2)
-    pds = [pd]
-    lrs = [1]
-    asyms = [None]
-    thresholds = [args.threshold]
-    ccdrs = [None]
-    adams = [False]
-    pwlinears = [args.pwlinear]
+    payoff_mat_p1 = torch.Tensor([[G, 0], [1 + G, 1]]).to(device)
+    payoff_mat_p2 = payoff_mat_p1.T
+    pms = (payoff_mat_p1, payoff_mat_p2)
+    anneal_lr = 1
+    asym = args.asym
+    threshold = args.threshold
+    pwlinear = args.pwlinear
+    ccdr = args.ccdr
+    adam = args.adam
     seeds = [42]
 
-    mfos1_lrs = [0.002]
-    mfos2_lrs = [0.002]
-    opponents = ["NL"]
+    opponent = "NL"
 
     assert n_runs_to_track <= batch_size
+
+    #############################################
 
     run_args = {}
     run_args["batch_size"] = batch_size
     run_args["n_runs_to_track"] = n_runs_to_track
     run_args["num_steps"] = num_steps
     run_args["G"] = G
-    run_args["threshold"] = thresholds
-    run_args["pwlinear"] = pwlinears
-    run_args["ccdr"] = ccdrs
-    run_args["adam"] = adams
-    run_args["payoff_mat_p1"] = pd_payoff_mat_1.cpu().numpy().tolist()
-    run_args["payoff_mat_p2"] = pd_payoff_mat_2.cpu().numpy().tolist()
-    run_args["lrs"] = lrs
-    run_args["asyms"] = asyms
-    run_args["opponents"] = opponents
+    run_args["threshold"] = threshold
+    run_args["pwlinear"] = pwlinear
+    run_args["ccdr"] = ccdr
+    run_args["adam"] = adam
+    run_args["payoff_mat_p1"] = pms[0].cpu().numpy().tolist()
+    run_args["payoff_mat_p2"] = pms[1].cpu().numpy().tolist()
+    run_args["anneal_lr"] = anneal_lr
+    run_args["asym"] = asym
+    run_args["opponent"] = opponent
     run_args["seeds"] = seeds
     run_args["name"] = name
     run_args["K_epochs"] = K_epochs
@@ -415,6 +422,7 @@ if __name__ == "__main__":
     run_args["mfos1_lrs"] = mfos1_lrs
     run_args["mfos2_lrs"] = mfos2_lrs
     run_args["betas"] = betas
+    run_args["entropy"] = entropy
     run_args["max_episodes"] = max_episodes
     run_args["save_freq"] = save_freq
     run_args["lamb"] = lamb
@@ -428,47 +436,42 @@ if __name__ == "__main__":
 
     results = []
     param_list = []
-    for pms in pds:
-        for lr in lrs:
-            for mfos_lr1 in mfos1_lrs:
-                for mfos_lr2 in mfos2_lrs:
-                    for asym in asyms:
-                        for threshold in thresholds:
-                            for pwlinear in pwlinears:
-                                for ccdr in ccdrs:
-                                    for adam in adams:
-                                        for seed in seeds:
-                                            if seed is not None:
-                                                np.random.seed(seed)
-                                            runs_to_track = np.random.choice(
-                                                batch_size,
-                                                n_runs_to_track,
-                                                replace=False,
-                                            )
-                                            param_list.append(
-                                                (
-                                                    pms,
-                                                    lr,
-                                                    mfos_lr1,
-                                                    mfos_lr2,
-                                                    betas,
-                                                    gamma,
-                                                    K_epochs,
-                                                    eps_clip,
-                                                    max_episodes,
-                                                    asym,
-                                                    threshold,
-                                                    pwlinear,
-                                                    ccdr,
-                                                    adam,
-                                                    num_steps,
-                                                    batch_size,
-                                                    runs_to_track,
-                                                    seed,
-                                                    lamb,
-                                                    lamb_anneal,
-                                                )
-                                            )
+    for mfos_lr1 in mfos1_lrs:
+        for mfos_lr2 in mfos2_lrs:
+            for seed in seeds:
+                if seed is not None:
+                    np.random.seed(seed)
+                runs_to_track = np.random.choice(
+                    batch_size,
+                    n_runs_to_track,
+                    replace=False,
+                )
+                param_list.append(
+                    (
+                        pms,
+                        anneal_lr,
+                        mfos_lr1,
+                        mfos_lr2,
+                        betas,
+                        gamma,
+                        K_epochs,
+                        eps_clip,
+                        max_episodes,
+                        asym,
+                        threshold,
+                        pwlinear,
+                        ccdr,
+                        adam,
+                        num_steps,
+                        batch_size,
+                        runs_to_track,
+                        seed,
+                        lamb,
+                        lamb_anneal,
+                        opponent,
+                        entropy,
+                    )
+                )
 
     with Pool(8) as pool:
         start_time = time.time()
@@ -479,8 +482,12 @@ if __name__ == "__main__":
     # ordered_results = [log_dict[tuple(params[1:11])] for params in param_list]
     ordered_results = []
     for params in param_list:
-        tup = tuple(params[1:11] + params[13:17])
+        tup = tuple(params[1:4] + params[9:16] + params[17:20])
         ordered_results.append(log_dict[tup])
 
     with open(os.path.join(name, f"out.json"), "w") as f:
         json.dump(ordered_results, f)
+
+
+if __name__ == "__main__":
+    main()
