@@ -2,8 +2,6 @@
 *.json
 *.pth
 *.th
-*.png
-*.jpg
 /runs/non_mfos/archive
 /runs/mfos/archive
 /runs/self/archive

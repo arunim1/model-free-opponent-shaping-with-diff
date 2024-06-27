@@ -342,60 +342,6 @@ class SymmetricMetaGames:
         if seed is not None:
             torch.manual_seed(seed)
             torch.cuda.manual_seed(seed)
-        self.b = b
-        self.ccdr = ccdr
-        assert self.ccdr is None
-        # no need for adam
-
-        assert pwlinear is None or threshold is None
-
-        d, self.game_batched = one_shot(
-            pms[0],
-            pms[1],
-            self.b,
-            asym=asym,
-            threshold=threshold,
-            pwlinear=pwlinear,
-        )
-
-        self.std = 1 if pwlinear is None else 0.05
-        self.d = d[0]
-
-    def reset(self, info=False):
-        p_ba_0 = torch.nn.init.normal_(torch.empty((self.b, self.d)), std=self.std).to(
-            device
-        )
-        p_ba_1 = torch.nn.init.normal_(torch.empty((self.b, self.d)), std=self.std).to(
-            device
-        )
-        state_0 = torch.sigmoid(torch.cat((p_ba_0.detach(), p_ba_1.detach()), dim=-1))
-        state_1 = torch.sigmoid(torch.cat((p_ba_1.detach(), p_ba_0.detach()), dim=-1))
-
-        return [state_0, state_1]
-
-    def step(self, p_ba_0, p_ba_1):
-        th_ba = [p_ba_0.detach(), p_ba_1.detach()]
-        l1, l2, M = self.game_batched(th_ba)
-        state_0 = torch.sigmoid(torch.cat((p_ba_0.detach(), p_ba_1.detach()), dim=-1))
-        state_1 = torch.sigmoid(torch.cat((p_ba_1.detach(), p_ba_0.detach()), dim=-1))
-
-        return [state_0, state_1], [-l1.detach(), -l2.detach()], M
-
-
-class NewSymmetricMetaGames:
-    def __init__(
-        self,
-        b,
-        pms,
-        asym=None,
-        threshold=None,
-        pwlinear=None,
-        seed=None,
-        ccdr=None,
-    ):
-        if seed is not None:
-            torch.manual_seed(seed)
-            torch.cuda.manual_seed(seed)
 
         self.b = b
         self.ccdr = ccdr

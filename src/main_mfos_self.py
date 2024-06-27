@@ -1,8 +1,7 @@
 import torch
 from ppo import PPO, Memory
 
-from environments import MetaGames  # , SymmetricMetaGames
-from environments import NewSymmetricMetaGames as SymmetricMetaGames
+from environments import MetaGames, SymmetricMetaGames
 import os
 import argparse
 import json
@@ -126,16 +125,36 @@ def get_log(
     rew_means = []
 
     for i_episode in tqdm(range(1, max_episodes + 1)):
+        subtime = i_episode in [
+            1,
+            max_episodes // 4,
+            max_episodes // 2,
+            3 * max_episodes // 4,
+            max_episodes,
+        ]
+        if subtime:
+            sub_log = {}
+            sub_log["avg_params_p1"] = []
+            sub_log["avg_params_p2"] = []
+            sub_log["params_p1"] = []
+            sub_log["params_p2"] = []
+            # M is [P(p1 chooses action1 and p2 chooses action1), P(p1 chooses action2 and p2 chooses action1), etc.] or [a1a1, a2a1, a1a2, a2a2] for the two players.
+            sub_log["avg_Ms"] = []
+            sub_log["Ms"] = []
+            sub_log["avg_rewards_p1"] = []
+            sub_log["avg_rewards_p2"] = []
+            sub_log["rewards_p1"] = []
+            sub_log["rewards_p2"] = []
+
         if lamb > 0:
             lamb -= lamb_anneal
-        if np.random.random() > lamb:
+        if (np.random.random() > lamb) or subtime:
             state_0, state_1 = env.reset()
 
             running_reward_0 = torch.zeros(batch_size).to(device)
             running_reward_1 = torch.zeros(batch_size).to(device)
 
             for t in range(num_steps):
-
                 # Running policy_old:
                 action_0 = ppo_0.policy_old.act(state_0, memory_0)
                 action_1 = ppo_1.policy_old.act(state_1, memory_1)
@@ -148,6 +167,45 @@ def get_log(
 
                 running_reward_0 += reward_0.squeeze(-1)
                 running_reward_1 += reward_1.squeeze(-1)
+
+                if subtime:
+                    d_act = state_0.shape[1] // 2
+                    p_ba_0, p_ba_1 = torch.split(state_0, d_act, dim=1)
+
+                    # p_ba_0 corresponds to l1 aka reward_0 aka ppo_0 and p1. pleased
+                    sub_log["avg_params_p1"].append(
+                        p_ba_0.detach().mean(dim=0).squeeze().tolist()
+                    )
+                    sub_log["avg_params_p2"].append(
+                        p_ba_1.detach().mean(dim=0).squeeze().tolist()
+                    )
+                    sub_log["params_p1"].append(
+                        p_ba_0.detach()[runs_to_track].squeeze().cpu().numpy().tolist()
+                    )
+                    sub_log["params_p2"].append(
+                        p_ba_1.detach()[runs_to_track].squeeze().cpu().numpy().tolist()
+                    )
+                    sub_log["avg_Ms"].append(
+                        M.detach().mean(dim=0).squeeze().cpu().tolist()
+                    )
+                    sub_log["Ms"].append(
+                        M.detach()[runs_to_track].squeeze().cpu().numpy().tolist()
+                    )
+                    sub_log["avg_rewards_p1"].append(
+                        reward_0.mean(dim=0).squeeze().cpu().tolist()
+                    )
+                    sub_log["avg_rewards_p2"].append(
+                        reward_1.mean(dim=0).squeeze().cpu().tolist()
+                    )
+                    sub_log["rewards_p1"].append(
+                        reward_0.detach()[runs_to_track].squeeze().cpu().tolist()
+                    )
+                    sub_log["rewards_p2"].append(
+                        reward_1.detach()[runs_to_track].squeeze().cpu().tolist()
+                    )
+
+            if subtime:
+                log["five_game_logs"].append(sub_log)
 
             ppo_0.update(memory_0)
             ppo_1.update(memory_1)
@@ -216,19 +274,9 @@ def get_log(
                 }
             )
 
-    return log
-    #     if i_episode % save_freq == 0:
-    #         ppo_0.save(os.path.join(name, f"{i_episode}_0.pth"))
-    #         ppo_1.save(os.path.join(name, f"{i_episode}_1.pth"))
-    #         with open(os.path.join(name, f"out_{i_episode}.json"), "w") as f:
-    #             json.dump(rew_means, f)
-    #         print(f"SAVING! {i_episode}")
+    log["rew_means"] = rew_means
 
-    # ppo_0.save(os.path.join(name, f"{i_episode}_0.pth"))
-    # ppo_1.save(os.path.join(name, f"{i_episode}_1.pth"))
-    # with open(os.path.join(name, f"out_{i_episode}.json"), "w") as f:
-    #     json.dump(rew_means, f)
-    # print(f"SAVING! {i_episode}")
+    return log
 
 
 def run_simulation(params):

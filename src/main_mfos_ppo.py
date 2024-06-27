@@ -195,15 +195,7 @@ def get_log(
             }
         )
 
-        # if i_episode % save_freq == 0:
-        #     ppo.save(os.path.join(name, f"{i_episode}.pth"))
-        #     with open(os.path.join(name, f"out_{i_episode}.json"), "w") as f:
-        #         json.dump(rew_means, f)
-        #     print(f"SAVING! {i_episode}")
-
     log["rew_means"] = rew_means
-
-    # ppo.save(os.path.join(name, f"{i_episode}.pth"))
 
     return log
 
