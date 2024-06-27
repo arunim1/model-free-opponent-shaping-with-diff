@@ -190,6 +190,8 @@ if __name__ == "__main__":
             running_opp_reward = torch.zeros(batch_size).to(device)
 
             for t in range(num_steps):
+                state = torch.cat((state[0], state[1]), dim=-1)
+
                 # Running policy_old:
                 action = ppo_1.policy_old.act(state, memory_1)
                 state, reward, info, M = nl_env.step(action)
