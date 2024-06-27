@@ -2,7 +2,6 @@ import torch
 import os.path as osp
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-# TODO: make the piecewise linear one-shot game
 
 
 def asymmetrize(p_m_1, p_m_2, eps=1e-3):

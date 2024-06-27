@@ -4,22 +4,39 @@ import argparse
 import os
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--folder", type=str, default="/runs/mfos_self_ezp1nop2")
+parser.add_argument("--folder", type=str, default="runs/delselff27")
 args = parser.parse_args()
 
 # Load the JSON file
 folder = args.folder
-with open(f"./{folder}/out.json", "r") as f:
-    data = json.load(f)
+
+max_num = 0
+for f in os.listdir(folder):
+    if f.startswith("out_") and f.endswith(".json"):
+        num = int(f.split("_")[1].split(".")[0])
+        if num > max_num:
+            max_num = num
+data = []
+try:
+    with open(f"./{folder}/out_{max_num}.json", "r") as f:
+        data.append(json.load(f))
+except:
+    with open(f"./{folder}/out.json", "r") as f:
+        data.append(json.load(f))
+
 
 # Extract unique player combinations
-player_combos = list(set((d["p1"], d["p2"]) for d in data))
+# player_combos = list(set((d["p1"], d["p2"]) for d in data))
 
 d = data[0]
 
-rewmeans = d["rew_means"]
+new = True if "rew_means" in d else False
+
+rewmeans = d["rew_means"] if new else d
 
 del d
+
+plt.figure(figsize=(8, 8))
 
 x_v_nl = [rew["ep"] for rew in rewmeans if not rew["other"]]
 y_v_nl = [rew["rew 0"] for rew in rewmeans if not rew["other"]]
@@ -41,5 +58,5 @@ plt.grid(False)
 
 if not os.path.exists(f"./{folder}/img"):
     os.mkdir(f"./{folder}/img")
-plt.savefig(f".{folder}/img/avg_rew_vs_ep.png")
+plt.savefig(f"./{folder}/img/avg_rew_vs_ep.png")
 plt.close()

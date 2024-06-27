@@ -1,7 +1,7 @@
 import torch
 from ppo import PPO, Memory
 
-# from environments import MetaGames, SymmetricMetaGames
+from environments import MetaGames  # , SymmetricMetaGames
 from environments import NewSymmetricMetaGames as SymmetricMetaGames
 import os
 import argparse
@@ -33,7 +33,7 @@ if __name__ == "__main__":
 
     save_freq = max_episodes // 4  # 250
 
-    lamb = -1.0  # No annealing
+    lamb = 1.0
     lamb_anneal = 0.0015
     name = f"runs/{args.exp_name}"
 
@@ -56,6 +56,7 @@ if __name__ == "__main__":
     thresholds = ["abs"]
     ccdrs = [None]
     adams = [False]
+    pwlinears = [None]
     seeds = [random_seed]
 
     env = SymmetricMetaGames(
@@ -92,7 +93,18 @@ if __name__ == "__main__":
         entropy=args.entropy,
     )
 
-    # nl_env = MetaGames(batch_size, )
+    nl_env = MetaGames(
+        batch_size,
+        pms=pds[0],
+        opponent="NL",
+        lr=lrs[0],
+        asym=asyms[0],
+        threshold=thresholds[0],
+        pwlinear=pwlinears[0],
+        seed=seeds[0],
+        ccdr=ccdrs[0],
+        adam=adams[0],
+    )
 
     print(lr, betas)
     # training loop
@@ -149,55 +161,57 @@ if __name__ == "__main__":
 
         else:
             print("v nl")
-            # state = nl_env.reset()
+            state = nl_env.reset()
 
-            # running_reward_0 = torch.zeros(batch_size).cuda()
-            # running_opp_reward = torch.zeros(batch_size).cuda()
+            running_reward_0 = torch.zeros(batch_size).to(device)
+            running_opp_reward = torch.zeros(batch_size).to(device)
 
-            # for t in range(num_steps):
-            #     # Running policy_old:
-            #     action = ppo_0.policy_old.act(state, memory_0)
-            #     state, reward, info, M = nl_env.step(action)
+            for t in range(num_steps):
+                state = torch.cat((state[0], state[1]), dim=-1)
 
-            #     memory_0.rewards.append(reward)
-            #     running_reward_0 += reward.squeeze(-1)
-            #     running_opp_reward += info.squeeze(-1)
+                # Running policy_old:
+                action = ppo_0.policy_old.act(state, memory_0)
+                state, reward, info, M = nl_env.step(action)
 
-            # ppo_0.update(memory_0)
-            # memory_0.clear_memory()
+                memory_0.rewards.append(reward)
+                running_reward_0 += reward.squeeze(-1)
+                running_opp_reward += info.squeeze(-1)
 
-            # print(f"loss 0: {-running_reward_0.mean() / num_steps}")
-            # print(f"opponent loss 0: {-running_opp_reward.mean() / num_steps}")
+            ppo_0.update(memory_0)
+            memory_0.clear_memory()
 
-            # # SECOND AGENT UPDATE
-            # state = nl_env.reset()
+            print(f"loss 0: {-running_reward_0.mean() / num_steps}")
+            print(f"opponent loss 0: {-running_opp_reward.mean() / num_steps}")
 
-            # running_reward_1 = torch.zeros(batch_size).cuda()
-            # running_opp_reward = torch.zeros(batch_size).cuda()
+            # SECOND AGENT UPDATE
+            state = nl_env.reset()
 
-            # for t in range(num_steps):
-            #     # Running policy_old:
-            #     action = ppo_1.policy_old.act(state, memory_1)
-            #     state, reward, info, M = nl_env.step(action)
+            running_reward_1 = torch.zeros(batch_size).to(device)
+            running_opp_reward = torch.zeros(batch_size).to(device)
 
-            #     memory_1.rewards.append(reward)
-            #     running_reward_1 += reward.squeeze(-1)
-            #     running_opp_reward += info.squeeze(-1)
+            for t in range(num_steps):
+                # Running policy_old:
+                action = ppo_1.policy_old.act(state, memory_1)
+                state, reward, info, M = nl_env.step(action)
 
-            # ppo_1.update(memory_1)
-            # memory_1.clear_memory()
+                memory_1.rewards.append(reward)
+                running_reward_1 += reward.squeeze(-1)
+                running_opp_reward += info.squeeze(-1)
 
-            # print(f"loss 1: {-running_reward_1.mean() / num_steps}")
-            # print(f"opponent loss 1: {-running_opp_reward.mean() / num_steps}")
+            ppo_1.update(memory_1)
+            memory_1.clear_memory()
 
-            # rew_means.append(
-            #     {
-            #         "ep": i_episode,
-            #         "other": False,
-            #         "rew 0": (running_reward_0.mean() / num_steps).item(),
-            #         "rew 1": (running_reward_1.mean() / num_steps).item(),
-            #     }
-            # )
+            print(f"loss 1: {-running_reward_1.mean() / num_steps}")
+            print(f"opponent loss 1: {-running_opp_reward.mean() / num_steps}")
+
+            rew_means.append(
+                {
+                    "ep": i_episode,
+                    "other": False,
+                    "rew 0": (running_reward_0.mean() / num_steps).item(),
+                    "rew 1": (running_reward_1.mean() / num_steps).item(),
+                }
+            )
 
         if i_episode % save_freq == 0:
             ppo_0.save(os.path.join(name, f"{i_episode}_0.pth"))
