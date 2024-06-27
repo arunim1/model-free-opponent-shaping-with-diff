@@ -160,7 +160,7 @@ if __name__ == "__main__":
     batch_size = 8192
     n_runs_to_track = 20
     num_steps = 500  # 100
-    name = f"runs/{args.exp_name}"
+    name = f"runs/non_mfos/{args.exp_name}"
     G = args.G
 
     # prisoner's dilemma

@@ -284,7 +284,7 @@ if __name__ == "__main__":
     G = args.G
 
     save_freq = max_episodes // 4  # 250
-    name = f"runs/{args.exp_name}"
+    name = f"runs/mfos/{args.exp_name}"
 
     #############################################
 

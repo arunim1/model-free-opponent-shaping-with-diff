@@ -1,5 +1,0 @@
-{
-  "exp_name": "non_mfos_pd_highlrs_diffsquared_G2.75_adam",
-  "G": 2.75,
-  "threshold": "squared"
-}

@@ -35,7 +35,7 @@ if __name__ == "__main__":
 
     lamb = 1.0
     lamb_anneal = 0.0015
-    name = f"runs/{args.exp_name}"
+    name = f"runs/self/{args.exp_name}"
 
     print(f"RUNNING NAME: {name}")
     if not os.path.isdir(name):

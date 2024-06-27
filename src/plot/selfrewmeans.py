@@ -4,7 +4,7 @@ import argparse
 import os
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--folder", type=str, default="runs/delselff27")
+parser.add_argument("--folder", type=str, default="runs/self/delselff272")
 args = parser.parse_args()
 
 # Load the JSON file
