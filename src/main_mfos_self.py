@@ -7,63 +7,79 @@ import os
 import argparse
 import json
 import numpy as np
+from tqdm import tqdm
+import time
+from torch.multiprocessing import Pool, Process, set_start_method
+
+try:
+    set_start_method("spawn")
+except RuntimeError:
+    pass
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--entropy", type=float, default=0.01)
 parser.add_argument("--exp-name", type=str, default="")
+parser.add_argument("--G", type=float, default=2)
+parser.add_argument("--threshold", type=str, default=None)
+parser.add_argument("--pwlinear", type=int, default=None)
+parser.add_argument("--entropy", type=float, default=0.01)
 parser.add_argument("--checkpoint", type=str, default="")
 args = parser.parse_args()
 
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # type: ignore
 
-if __name__ == "__main__":
-    ############################################
-    K_epochs = 4  # update policy for K epochs
 
-    eps_clip = 0.2  # clip parameter for PPO
-    gamma = 0.99  # discount factor
-
-    lr = 0.0002  # parameters for Adam optimizer
-    betas = (0.9, 0.999)
-
-    max_episodes = 256
-    batch_size = 4096
-    random_seed = 42
-    num_steps = 250
-
-    save_freq = max_episodes // 4  # 250
-
-    lamb = 1.0
-    lamb_anneal = 0.0015
-    name = f"runs/self/{args.exp_name}"
-
-    print(f"RUNNING NAME: {name}")
-    if not os.path.isdir(name):
-        os.mkdir(name)
-        with open(os.path.join(name, "commandline_args.txt"), "w") as f:
-            json.dump(args.__dict__, f, indent=2)
-
-    #############################################
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-    # creating environment
-    pd_payoff_mat_1 = torch.Tensor([[3, 0], [1 + 3, 1]]).to(device)
-    pd_payoff_mat_2 = pd_payoff_mat_1.T
-    pd = (pd_payoff_mat_1, pd_payoff_mat_2)
-    pds = [pd]
-    lrs = [1]
-    asyms = [None]
-    thresholds = ["abs"]
-    ccdrs = [None]
-    adams = [False]
-    pwlinears = [None]
-    seeds = [random_seed]
+def get_log(
+    pms,
+    p1,
+    p2,
+    lr,
+    mfos_lr1,
+    mfos_lr2,
+    betas,
+    gamma,
+    K_epochs,
+    eps_clip,
+    max_episodes,
+    asym,
+    threshold,
+    pwlinear,
+    ccdr,
+    adam,
+    num_steps,
+    batch_size,
+    runs_to_track,
+    seed,
+    lamb,
+    lamb_anneal,
+):
+    # initialize empty log for this game
+    log = {}
+    log["payoff_mat_p2"] = pms[0].cpu().numpy().tolist()
+    log["payoff_mat_p1"] = pms[1].cpu().numpy().tolist()
+    log["p1"] = p1
+    log["p2"] = p2
+    log["lr"] = lr
+    log["mfos_lr1"] = mfos_lr1
+    log["mfos_lr2"] = mfos_lr2
+    log["asym"] = asym
+    log["threshold"] = threshold
+    log["pwlinear"] = pwlinear
+    log["ccdr"] = ccdr
+    log["adam"] = adam
+    log["num_steps"] = num_steps
+    log["batch_size"] = batch_size
+    log["seed"] = seed
+    log["five_game_logs"] = []
 
     env = SymmetricMetaGames(
         batch_size,
-        pms=pds[0],
-        threshold=thresholds[0],
-        seed=seeds[0],
+        pms=pms,
+        asym=asym,
+        threshold=threshold,
+        pwlinear=pwlinear,
+        seed=seed,
+        ccdr=ccdr,
     )
 
     action_dim = env.d
@@ -75,7 +91,7 @@ if __name__ == "__main__":
     ppo_0 = PPO(
         state_dim,
         action_dim,
-        lr,
+        mfos_lr1,
         betas,
         gamma,
         K_epochs,
@@ -85,7 +101,7 @@ if __name__ == "__main__":
     ppo_1 = PPO(
         state_dim,
         action_dim,
-        lr,
+        mfos_lr2,
         betas,
         gamma,
         K_epochs,
@@ -95,29 +111,24 @@ if __name__ == "__main__":
 
     nl_env = MetaGames(
         batch_size,
-        pms=pds[0],
+        pms=pms,
         opponent="NL",
-        lr=lrs[0],
-        asym=asyms[0],
-        threshold=thresholds[0],
-        pwlinear=pwlinears[0],
-        seed=seeds[0],
-        ccdr=ccdrs[0],
-        adam=adams[0],
+        lr=lr,
+        asym=asym,
+        threshold=threshold,
+        pwlinear=pwlinear,
+        seed=seed,
+        ccdr=ccdr,
+        adam=adam,
     )
 
-    print(lr, betas)
     # training loop
     rew_means = []
 
-    for i_episode in range(1, max_episodes + 1):
-        print("=" * 100)
-        print(i_episode)
-        print(lamb, flush=True)
+    for i_episode in tqdm(range(1, max_episodes + 1)):
         if lamb > 0:
             lamb -= lamb_anneal
         if np.random.random() > lamb:
-            print("v opponent")
             state_0, state_1 = env.reset()
 
             running_reward_0 = torch.zeros(batch_size).to(device)
@@ -146,9 +157,6 @@ if __name__ == "__main__":
 
             l0 = -running_reward_0.mean() / num_steps
             l1 = -running_reward_1.mean() / num_steps
-            print(f"loss 0: {l0}")
-            print(f"loss 1: {l1}")
-            print(f"sum: {l0 + l1}")
 
             rew_means.append(
                 {
@@ -160,7 +168,6 @@ if __name__ == "__main__":
             )
 
         else:
-            print("v nl")
             state = nl_env.reset()
 
             running_reward_0 = torch.zeros(batch_size).to(device)
@@ -179,9 +186,6 @@ if __name__ == "__main__":
 
             ppo_0.update(memory_0)
             memory_0.clear_memory()
-
-            print(f"loss 0: {-running_reward_0.mean() / num_steps}")
-            print(f"opponent loss 0: {-running_opp_reward.mean() / num_steps}")
 
             # SECOND AGENT UPDATE
             state = nl_env.reset()
@@ -203,9 +207,6 @@ if __name__ == "__main__":
             ppo_1.update(memory_1)
             memory_1.clear_memory()
 
-            print(f"loss 1: {-running_reward_1.mean() / num_steps}")
-            print(f"opponent loss 1: {-running_opp_reward.mean() / num_steps}")
-
             rew_means.append(
                 {
                     "ep": i_episode,
@@ -215,15 +216,223 @@ if __name__ == "__main__":
                 }
             )
 
-        if i_episode % save_freq == 0:
-            ppo_0.save(os.path.join(name, f"{i_episode}_0.pth"))
-            ppo_1.save(os.path.join(name, f"{i_episode}_1.pth"))
-            with open(os.path.join(name, f"out_{i_episode}.json"), "w") as f:
-                json.dump(rew_means, f)
-            print(f"SAVING! {i_episode}")
+    return log
+    #     if i_episode % save_freq == 0:
+    #         ppo_0.save(os.path.join(name, f"{i_episode}_0.pth"))
+    #         ppo_1.save(os.path.join(name, f"{i_episode}_1.pth"))
+    #         with open(os.path.join(name, f"out_{i_episode}.json"), "w") as f:
+    #             json.dump(rew_means, f)
+    #         print(f"SAVING! {i_episode}")
 
-    ppo_0.save(os.path.join(name, f"{i_episode}_0.pth"))
-    ppo_1.save(os.path.join(name, f"{i_episode}_1.pth"))
-    with open(os.path.join(name, f"out_{i_episode}.json"), "w") as f:
-        json.dump(rew_means, f)
-    print(f"SAVING! {i_episode}")
+    # ppo_0.save(os.path.join(name, f"{i_episode}_0.pth"))
+    # ppo_1.save(os.path.join(name, f"{i_episode}_1.pth"))
+    # with open(os.path.join(name, f"out_{i_episode}.json"), "w") as f:
+    #     json.dump(rew_means, f)
+    # print(f"SAVING! {i_episode}")
+
+
+def run_simulation(params):
+    (
+        pms,
+        lr,
+        mfos_lr1,
+        mfos_lr2,
+        betas,
+        gamma,
+        K_epochs,
+        eps_clip,
+        max_episodes,
+        asym,
+        threshold,
+        pwlinear,
+        ccdr,
+        adam,
+        num_steps,
+        batch_size,
+        runs_to_track,
+        seed,
+        lamb,
+        lamb_anneal,
+    ) = params
+    return get_log(
+        pms,
+        "MFOS 1",
+        "MFOS 2",
+        lr,
+        mfos_lr1,
+        mfos_lr2,
+        betas,
+        gamma,
+        K_epochs,
+        eps_clip,
+        max_episodes,
+        asym,
+        threshold,
+        pwlinear,
+        ccdr,
+        adam,
+        num_steps,
+        batch_size,
+        runs_to_track,
+        seed,
+        lamb,
+        lamb_anneal,
+    )
+
+
+def get_params_tuple(log):
+    return (
+        log["p1"],
+        log["lr"],
+        log["mfos_lr1"],
+        log["mfos_lr2"],
+        log["asym"],
+        log["threshold"],
+        log["pwlinear"],
+        log["ccdr"],
+        log["adam"],
+        log["num_steps"],
+        log["batch_size"],
+    )
+
+
+if __name__ == "__main__":
+    ############################################
+    K_epochs = 4  # update policy for K epochs
+
+    eps_clip = 0.2  # clip parameter for PPO
+    gamma = 0.99  # discount factor
+
+    lr = 0.0002  # parameters for Adam optimizer
+    betas = (0.9, 0.999)
+
+    max_episodes = 256
+    batch_size = 256
+    n_runs_to_track = 20
+    num_steps = 250
+    G = args.G
+
+    save_freq = max_episodes // 4  # 250
+
+    lamb = 1.0
+    lamb_anneal = 0.0015
+    name = f"runs/self/{args.exp_name}"
+
+    # print(f"RUNNING NAME: {name}")
+    # if not os.path.isdir(name):
+    #     os.mkdir(name)
+    #     with open(os.path.join(name, "commandline_args.txt"), "w") as f:
+    #         json.dump(args.__dict__, f, indent=2)
+
+    #############################################
+
+    # creating environment
+    pd_payoff_mat_1 = torch.Tensor([[3, 0], [1 + 3, 1]]).to(device)
+    pd_payoff_mat_2 = pd_payoff_mat_1.T
+    pd = (pd_payoff_mat_1, pd_payoff_mat_2)
+    pds = [pd]
+    lrs = [1]
+    asyms = [None]
+    thresholds = [args.threshold]
+    ccdrs = [None]
+    adams = [False]
+    pwlinears = [args.pwlinear]
+    seeds = [42]
+
+    mfos1_lrs = [0.002]
+    mfos2_lrs = [0.002]
+    opponents = ["NL"]
+
+    assert n_runs_to_track <= batch_size
+
+    run_args = {}
+    run_args["batch_size"] = batch_size
+    run_args["n_runs_to_track"] = n_runs_to_track
+    run_args["num_steps"] = num_steps
+    run_args["G"] = G
+    run_args["threshold"] = thresholds
+    run_args["pwlinear"] = pwlinears
+    run_args["ccdr"] = ccdrs
+    run_args["adam"] = adams
+    run_args["payoff_mat_p1"] = pd_payoff_mat_1.cpu().numpy().tolist()
+    run_args["payoff_mat_p2"] = pd_payoff_mat_2.cpu().numpy().tolist()
+    run_args["lrs"] = lrs
+    run_args["asyms"] = asyms
+    run_args["opponents"] = opponents
+    run_args["seeds"] = seeds
+    run_args["name"] = name
+    run_args["K_epochs"] = K_epochs
+    run_args["eps_clip"] = eps_clip
+    run_args["gamma"] = gamma
+    run_args["mfos1_lrs"] = mfos1_lrs
+    run_args["mfos2_lrs"] = mfos2_lrs
+    run_args["betas"] = betas
+    run_args["max_episodes"] = max_episodes
+    run_args["save_freq"] = save_freq
+    run_args["lamb"] = lamb
+    run_args["lamb_anneal"] = lamb_anneal
+
+    print(f"RUNNING NAME: {name}")
+    if not os.path.isdir(name):
+        os.mkdir(name)
+        with open(os.path.join(name, "run_args.txt"), "w") as f:
+            json.dump(run_args, f, indent=2)
+
+    results = []
+    param_list = []
+    for pms in pds:
+        for lr in lrs:
+            for mfos_lr1 in mfos1_lrs:
+                for mfos_lr2 in mfos2_lrs:
+                    for asym in asyms:
+                        for threshold in thresholds:
+                            for pwlinear in pwlinears:
+                                for ccdr in ccdrs:
+                                    for adam in adams:
+                                        for seed in seeds:
+                                            if seed is not None:
+                                                np.random.seed(seed)
+                                            runs_to_track = np.random.choice(
+                                                batch_size,
+                                                n_runs_to_track,
+                                                replace=False,
+                                            )
+                                            param_list.append(
+                                                (
+                                                    pms,
+                                                    lr,
+                                                    mfos_lr1,
+                                                    mfos_lr2,
+                                                    betas,
+                                                    gamma,
+                                                    K_epochs,
+                                                    eps_clip,
+                                                    max_episodes,
+                                                    asym,
+                                                    threshold,
+                                                    pwlinear,
+                                                    ccdr,
+                                                    adam,
+                                                    num_steps,
+                                                    batch_size,
+                                                    runs_to_track,
+                                                    seed,
+                                                    lamb,
+                                                    lamb_anneal,
+                                                )
+                                            )
+
+    with Pool(8) as pool:
+        start_time = time.time()
+        results = pool.map(run_simulation, param_list)
+        print(f"Elapsed time: {time.time() - start_time}")
+
+    log_dict = {get_params_tuple(log): log for log in results}
+    # ordered_results = [log_dict[tuple(params[1:11])] for params in param_list]
+    ordered_results = []
+    for params in param_list:
+        tup = tuple(params[1:11] + params[13:17])
+        ordered_results.append(log_dict[tup])
+
+    with open(os.path.join(name, f"out.json"), "w") as f:
+        json.dump(ordered_results, f)
