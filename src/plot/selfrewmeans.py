@@ -10,31 +10,34 @@ args = parser.parse_args()
 # Load the JSON file
 folder = args.folder
 
+with open(f"./{folder}/run_args.txt", "r") as f:
+    run_args = json.load(f)
+payoffs = run_args["payoff_mat_p1"][0]
+payoffs.extend(run_args["payoff_mat_p1"][1])
+payoffs.extend(run_args["payoff_mat_p2"][0])
+payoffs.extend(run_args["payoff_mat_p2"][1])
+
+y_min = min(payoffs)
+y_max = max(payoffs)
+
 max_num = 0
 for f in os.listdir(folder):
     if f.startswith("out_") and f.endswith(".json"):
         num = int(f.split("_")[1].split(".")[0])
         if num > max_num:
             max_num = num
-data = []
 try:
     with open(f"./{folder}/out_{max_num}.json", "r") as f:
-        data.append(json.load(f))
+        data = json.load(f)
 except:
     with open(f"./{folder}/out.json", "r") as f:
-        data.append(json.load(f))
-
-
-# Extract unique player combinations
-# player_combos = list(set((d["p1"], d["p2"]) for d in data))
+        data = json.load(f)
 
 d = data[0]
 
 new = True if "rew_means" in d else False
 
 rewmeans = d["rew_means"] if new else d
-
-del d
 
 plt.figure(figsize=(8, 8))
 
@@ -55,6 +58,7 @@ plt.xlabel("Training Episode")
 plt.ylabel("Reward")
 plt.title("Average Reward vs. Training Episode")
 plt.grid(False)
+plt.ylim(y_min - 0.05, y_max + 0.05)
 
 if not os.path.exists(f"./{folder}/img"):
     os.mkdir(f"./{folder}/img")
