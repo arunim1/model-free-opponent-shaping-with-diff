@@ -1,0 +1,4 @@
+{
+  "exp_name": "non_mfos_ezc_widelrs_diffabs",
+  "G": 2
+}

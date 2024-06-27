@@ -1,0 +1,6 @@
+{
+  "exp_name": "non_mfos_pd_highlrs_diffpw8_G2.5",
+  "G": 2.5,
+  "threshold": null,
+  "pwlinear": 8
+}

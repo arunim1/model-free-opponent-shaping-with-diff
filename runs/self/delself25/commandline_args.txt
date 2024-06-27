@@ -1,0 +1,5 @@
+{
+  "entropy": 0.01,
+  "exp_name": "delself25",
+  "checkpoint": ""
+}
