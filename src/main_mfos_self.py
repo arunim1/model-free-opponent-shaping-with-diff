@@ -428,6 +428,7 @@ def main():
     run_args["save_freq"] = save_freq
     run_args["lamb"] = lamb
     run_args["lamb_anneal"] = lamb_anneal
+    run_args["anneal"] = args.anneal
 
     print(f"RUNNING NAME: {name}")
     if not os.path.isdir(name):
