@@ -2,25 +2,25 @@
   "batch_size": 256,
   "n_runs_to_track": 20,
   "num_steps": 250,
-  "G": 2,
-  "threshold": null,
+  "G": 3.0,
+  "threshold": "squared",
   "pwlinear": null,
   "ccdr": null,
   "adam": false,
   "payoff_mat_p1": [
     [
-      2.0,
+      3.0,
       0.0
     ],
     [
-      3.0,
+      4.0,
       1.0
     ]
   ],
   "payoff_mat_p2": [
     [
-      2.0,
-      3.0
+      3.0,
+      4.0
     ],
     [
       0.0,
@@ -33,7 +33,7 @@
   "seeds": [
     42
   ],
-  "name": "runs/self/del",
+  "name": "runs/self/squared_G3_2",
   "K_epochs": 4,
   "eps_clip": 0.2,
   "gamma": 0.99,
@@ -50,7 +50,7 @@
   "entropy": 0.01,
   "max_episodes": 256,
   "save_freq": 64,
-  "lamb": -1.0,
+  "lamb": 1.0,
   "lamb_anneal": 0.006,
-  "anneal": false
+  "anneal": true
 }

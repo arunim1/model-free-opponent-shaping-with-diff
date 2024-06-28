@@ -1,0 +1,56 @@
+{
+  "batch_size": 256,
+  "n_runs_to_track": 20,
+  "num_steps": 250,
+  "G": 3.0,
+  "threshold": "abs",
+  "pwlinear": null,
+  "ccdr": null,
+  "adam": false,
+  "payoff_mat_p1": [
+    [
+      3.0,
+      0.0
+    ],
+    [
+      4.0,
+      1.0
+    ]
+  ],
+  "payoff_mat_p2": [
+    [
+      3.0,
+      4.0
+    ],
+    [
+      0.0,
+      1.0
+    ]
+  ],
+  "anneal_lr": 1,
+  "asym": null,
+  "opponent": "NL",
+  "seeds": [
+    42
+  ],
+  "name": "runs/self/abs_G3_2_anneal",
+  "K_epochs": 4,
+  "eps_clip": 0.2,
+  "gamma": 0.99,
+  "mfos1_lrs": [
+    0.0002
+  ],
+  "mfos2_lrs": [
+    0.0002
+  ],
+  "betas": [
+    0.9,
+    0.999
+  ],
+  "entropy": 0.01,
+  "max_episodes": 256,
+  "save_freq": 64,
+  "lamb": 1.0,
+  "lamb_anneal": 0.006,
+  "anneal": true
+}
