@@ -379,7 +379,7 @@ def main():
     save_freq = max_episodes // 4
 
     lamb = 1.0
-    lamb_anneal = 0.0015
+    lamb_anneal = 0.0015 * (1024 / max_episodes)
     name = f"runs/self/{args.exp_name}"
 
     # creating environment

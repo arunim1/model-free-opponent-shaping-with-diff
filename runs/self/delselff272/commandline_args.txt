@@ -1,5 +1,0 @@
-{
-  "entropy": 0.01,
-  "exp_name": "delselff272",
-  "checkpoint": ""
-}

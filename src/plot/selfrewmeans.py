@@ -43,15 +43,47 @@ plt.figure(figsize=(8, 8))
 
 x_v_nl = [rew["ep"] for rew in rewmeans if not rew["other"]]
 y_v_nl = [rew["rew 0"] for rew in rewmeans if not rew["other"]]
-plt.plot(x_v_nl, y_v_nl, label="p1 vs NL", alpha=0.4, color="tab:blue")
+plt.plot(
+    x_v_nl,
+    y_v_nl,
+    label="p1 vs NL",
+    alpha=0.4,
+    color="tab:blue",
+    marker="o",
+    markersize=2,
+)
 y_v_nl = [rew["rew 1"] for rew in rewmeans if not rew["other"]]
-plt.plot(x_v_nl, y_v_nl, label="p2 vs NL", alpha=0.4, color="tab:red")
+plt.plot(
+    x_v_nl,
+    y_v_nl,
+    label="p2 vs NL",
+    alpha=0.4,
+    color="tab:red",
+    marker="o",
+    markersize=2,
+)
 
 x_v_non_nl = [rew["ep"] for rew in rewmeans if rew["other"]]
 y_v_non_nl = [rew["rew 0"] for rew in rewmeans if rew["other"]]
-plt.plot(x_v_non_nl, y_v_non_nl, label="p1", alpha=0.8, color="tab:blue")
+plt.plot(
+    x_v_non_nl,
+    y_v_non_nl,
+    label="p1",
+    alpha=0.8,
+    color="tab:blue",
+    marker="o",
+    markersize=2,
+)
 y_v_non_nl = [rew["rew 1"] for rew in rewmeans if rew["other"]]
-plt.plot(x_v_non_nl, y_v_non_nl, label="p2", alpha=0.8, color="tab:red")
+plt.plot(
+    x_v_non_nl,
+    y_v_non_nl,
+    label="p2",
+    alpha=0.8,
+    color="tab:red",
+    marker="o",
+    markersize=2,
+)
 
 plt.legend()
 plt.xlabel("Training Episode")
