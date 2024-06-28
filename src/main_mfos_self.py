@@ -24,6 +24,7 @@ parser.add_argument("--threshold", type=str, default=None)
 parser.add_argument("--pwlinear", type=int, default=None)
 parser.add_argument("--ccdr", type=int, default=None)
 parser.add_argument("--adam", type=int, default=False)
+parser.add_argument("--anneal", type=int, default=False)
 
 parser.add_argument("--entropy", type=float, default=0.01)
 parser.add_argument("--checkpoint", type=str, default="")
@@ -378,7 +379,7 @@ def main():
 
     save_freq = max_episodes // 4
 
-    lamb = 1.0
+    lamb = 1.0 if args.anneal else -1.0
     lamb_anneal = 0.0015 * (1024 / max_episodes)
     name = f"runs/self/{args.exp_name}"
 

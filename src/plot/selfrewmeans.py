@@ -50,7 +50,7 @@ plt.plot(
     alpha=0.4,
     color="tab:blue",
     marker="o",
-    markersize=2,
+    markersize=3,
 )
 y_v_nl = [rew["rew 1"] for rew in rewmeans if not rew["other"]]
 plt.plot(
@@ -60,7 +60,7 @@ plt.plot(
     alpha=0.4,
     color="tab:red",
     marker="o",
-    markersize=2,
+    markersize=3,
 )
 
 x_v_non_nl = [rew["ep"] for rew in rewmeans if rew["other"]]
@@ -72,7 +72,7 @@ plt.plot(
     alpha=0.8,
     color="tab:blue",
     marker="o",
-    markersize=2,
+    markersize=3,
 )
 y_v_non_nl = [rew["rew 1"] for rew in rewmeans if rew["other"]]
 plt.plot(
@@ -82,7 +82,7 @@ plt.plot(
     alpha=0.8,
     color="tab:red",
     marker="o",
-    markersize=2,
+    markersize=3,
 )
 
 plt.legend()
