@@ -50,7 +50,7 @@
   "entropy": 0.01,
   "max_episodes": 256,
   "save_freq": 64,
-  "lamb": 1.0,
+  "lamb": -1.0,
   "lamb_anneal": 0.006,
-  "anneal": true
+  "anneal": false
 }

@@ -3,7 +3,7 @@
   "n_runs_to_track": 20,
   "num_steps": 250,
   "G": 3.0,
-  "threshold": "squared",
+  "threshold": "exp1",
   "pwlinear": null,
   "ccdr": null,
   "adam": false,
@@ -33,7 +33,7 @@
   "seeds": [
     42
   ],
-  "name": "runs/self/squared_G3",
+  "name": "runs/self/exp1_G3_2_anneal",
   "K_epochs": 4,
   "eps_clip": 0.2,
   "gamma": 0.99,
@@ -51,5 +51,6 @@
   "max_episodes": 256,
   "save_freq": 64,
   "lamb": 1.0,
-  "lamb_anneal": 0.0015
+  "lamb_anneal": 0.006,
+  "anneal": true
 }
